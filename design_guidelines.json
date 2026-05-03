@@ -1,0 +1,129 @@
+{
+  "theme": "light",
+  "archetype": "4 (Swiss & High-Contrast - Trustworthy Blue & White Variant)",
+  "design_philosophy": "Authoritative, structural, and modern. Designed for local trades (Plumbers, HVAC) who value reliability and zero fluff. Uses the 'Bento Grid' for dense information and high-contrast typography to emphasize urgency and ROI.",
+  "typography": {
+    "headings": {
+      "family": "Cabinet Grotesk, sans-serif",
+      "weights": ["800", "900"],
+      "classes": "font-extrabold tracking-tighter"
+    },
+    "body": {
+      "family": "Manrope, sans-serif",
+      "weights": ["400", "500", "600"],
+      "classes": "font-medium tracking-tight"
+    },
+    "mono_accents": {
+      "family": "JetBrains Mono, monospace",
+      "classes": "text-xs tracking-[0.2em] uppercase font-bold"
+    }
+  },
+  "colors": {
+    "background": {
+      "primary": "#FFFFFF",
+      "secondary": "#F8FAFC",
+      "inverted": "#020817"
+    },
+    "text": {
+      "primary": "#020817",
+      "secondary": "#475569",
+      "inverted": "#F8FAFC",
+      "accent": "#2563EB"
+    },
+    "brand": {
+      "blue_primary": "#2563EB",
+      "blue_dark": "#1D4ED8",
+      "blue_light": "#DBEAFE",
+      "cyan_accent": "#06B6D4"
+    },
+    "ui": {
+      "border": "#E2E8F0",
+      "border_dark": "#1E293B"
+    }
+  },
+  "layout_and_spacing": {
+    "container": "max-w-7xl mx-auto px-6 md:px-12",
+    "section_padding": "py-24 md:py-32",
+    "bento_gap": "gap-6 md:gap-8",
+    "card_padding": "p-8 md:p-12"
+  },
+  "surface_strategies": {
+    "cards": "bg-white border border-slate-200 rounded-none md:rounded-xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_8px_30px_rgb(37,99,235,0.08)] transition-all duration-300",
+    "inverted_cards": "bg-[#020817] border border-slate-800 text-white rounded-none md:rounded-xl",
+    "buttons": {
+      "primary": "bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-none px-8 py-6 flex items-center justify-center gap-2 transition-transform hover:-translate-y-1",
+      "secondary": "bg-transparent border-2 border-slate-900 text-slate-900 hover:bg-slate-900 hover:text-white font-bold rounded-none px-8 py-6 transition-all"
+    }
+  },
+  "motion_and_interactions": {
+    "hover_states": "Buttons must translate-y-1 with smooth drop-shadow increase. Cards should have subtle border color shifts (border-slate-200 to border-blue-200).",
+    "scroll_reveal": "Use framer-motion for staggered fade-up on bento grid items. Stagger children by 0.1s."
+  },
+  "components_to_use": {
+    "shadcn": ["Button", "Input", "Label", "Card", "Accordion", "Badge"],
+    "icons": "@phosphor-icons/react (Weight: Duotone for technical precision, Fill for solid UI actions)",
+    "custom": ["BentoGrid (raw html/tailwind)", "Marquee (react-fast-marquee)"]
+  },
+  "media": {
+    "hero_abstract": {
+      "url": "https://static.prod-images.emergentagent.com/jobs/cffe155f-7510-4337-961d-eac7fe382d09/images/25046618b90b91affd370c5e566f7856c953ca51c981bfda930a1d2519994c7a.png",
+      "alt": "Holographic blueprint of a residential house overlapping with an AI digital voice soundwave",
+      "placement": "Hero Section right column or background overlay"
+    },
+    "testimonials": [
+      {
+        "url": "https://images.unsplash.com/photo-1748442001865-5583ec02ae22?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2Njd8MHwxfHNlYXJjaHwxfHxwbHVtYmVyJTIwaHZhYyUyMHdvcmtlcnxlbnwwfHx8fDE3Nzc3OTkyMTR8MA&ixlib=rb-4.1.0&q=85",
+        "alt": "HVAC worker inspecting industrial pipes",
+        "role": "Owner, Apex Heating & Air"
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1732395805034-e0bf859665e5?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2Njd8MHwxfHNlYXJjaHwzfHxwbHVtYmVyJTIwaHZhYyUyMHdvcmtlcnxlbnwwfHx8fDE3Nzc3OTkyMTR8MA&ixlib=rb-4.1.0&q=85",
+        "alt": "Plumber in blue uniform",
+        "role": "Lead Plumber, FlowTech Plumbers"
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1676210133055-eab6ef033ce3?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2Njd8MHwxfHNlYXJjaHwyfHxwbHVtYmVyJTIwaHZhYyUyMHdvcmtlcnxlbnwwfHx8fDE3Nzc3OTkyMTR8MA&ixlib=rb-4.1.0&q=85",
+        "alt": "Electrician working on cabinet",
+        "role": "Founder, Volt Electric"
+      }
+    ]
+  },
+  "page_structure": [
+    {
+      "section": "Header",
+      "details": "Sticky glassmorphism nav (bg-white/80 backdrop-blur-xl). Logo on left ('ServiceSpeak AI'), Nav links center, 'Book Demo' solid blue CTA right."
+    },
+    {
+      "section": "Hero",
+      "details": "Split asymmetrical layout. Left: Huge text 'Never miss a lead again with 24/7 AI answering.' right aligned to grid. Right: hero_abstract image overlapping a blue accent box. Use JetBrains Mono for a tiny 'SYS.STATUS: ONLINE' overline."
+    },
+    {
+      "section": "Trusted By (Social Proof)",
+      "details": "High-contrast structural band (bg-slate-50 border-y border-slate-200). 'TRUSTED BY 500+ LOCAL TRADES' in mono font. Simple text-based logos of local trades (e.g., 'Apex Plumbing', 'Pro HVAC') in bold sans-serif."
+    },
+    {
+      "section": "Core Services (Bento Grid)",
+      "details": "3-column grid. Card 1 (Span 2 col): 'Automated Booking' with calendar UI mockup. Card 2: 'FAQ Handling' with chat bubbles. Card 3 (Span full row): 'Lead Capture' with dynamic form visualization."
+    },
+    {
+      "section": "How It Works",
+      "details": "Vertical timeline layout with deep blue background (bg-[#020817] text-white). Giant numbers ('01', '02', '03') set in Cabinet Grotesk with opacity-20. High-contrast typography."
+    },
+    {
+      "section": "Testimonials / Outcomes",
+      "details": "White background. Massive metrics: '3x ROI', '0 Missed Calls'. Testimonial cards featuring images from the media object."
+    },
+    {
+      "section": "CTA Section",
+      "details": "Massive blue block (bg-blue-600 text-white). Bold headline. Inline form (Shadcn Input + Button side-by-side) capturing Name, Phone, Email for a demo."
+    },
+    {
+      "section": "Footer",
+      "details": "Minimalist, structural. Thick top border. Links, copyright, and subtle 'Built by E1' watermark."
+    }
+  ],
+  "accessibility_and_testing": {
+    "contrast": "Ensure all text on blue backgrounds passes APCA contrast standards. No light gray text on white.",
+    "testing_attributes": "Add data-testid attributes to all buttons, form inputs, and major links (e.g., data-testid='hero-demo-button')."
+  }
+}
