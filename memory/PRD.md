@@ -37,3 +37,14 @@ Build a professional landing page for 'ServiceSpeak AI', an AI Automation Agency
 - Demo form submission: shows toast only, no persistence (MOCKED)
 - Trusted-by company names: representative, not actual customers
 - Testimonial quotes: representative, photos from Unsplash
+
+## Iteration 2 (Dec 2025)
+- Added `Pricing.jsx` — 3 tiers: Starter $299, Pro $599 (highlighted "MOST POPULAR"), Scale $1,299 with feature lists, footnote, scroll-to-CTA buttons
+- Added `AudioCallPlayer.jsx` — dark card with offset blue shadow, live transcript with active-line highlighting, animated waveform, play/restart controls, click-to-seek progress bar
+- Backend: new endpoints `GET /api/audio/demo-call` (cached mp3, generated via OpenAI TTS using EMERGENT_LLM_KEY) and `GET /api/audio/demo-call/script` (7-line transcript)
+- Real audio: 7-line emergency AC dispatch scenario, alternating voices `shimmer` (AI agent Sarah) and `onyx` (caller Jamie), concatenated mp3 cached at /app/backend/audio_cache/demo_call.mp3
+- Header nav updated: added "Hear it" and "Pricing" links
+
+## Tests
+- Iteration 1: frontend 19/19 pass (100%)
+- Iteration 2: backend 5/5 pass + frontend 100% pass
