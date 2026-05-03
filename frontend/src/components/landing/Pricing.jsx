@@ -1,4 +1,6 @@
+import { useEffect, useState } from "react";
 import { Check, Sparkles, Zap, Crown, ArrowRight } from "lucide-react";
+import { getPricingVariant } from "@/lib/abVariant";
 
 const TIERS = [
   {
@@ -58,6 +60,12 @@ const TIERS = [
 ];
 
 export const Pricing = () => {
+  const [variant, setVariant] = useState("pro_first_mobile");
+
+  useEffect(() => {
+    setVariant(getPricingVariant());
+  }, []);
+
   const scrollToCTA = () =>
     document.getElementById("cta")?.scrollIntoView({ behavior: "smooth" });
 
@@ -96,9 +104,14 @@ export const Pricing = () => {
               <div
                 key={tier.id}
                 data-testid={`pricing-tier-${tier.id}`}
+                data-variant={variant}
                 className={`group relative flex flex-col p-8 md:p-10 transition-all duration-500 ${
                   dark
-                    ? "order-first md:order-none bg-slate-950 text-white md:-translate-y-4 md:scale-[1.02] shadow-[0_30px_80px_rgba(2,8,23,0.25)]"
+                    ? `${
+                        variant === "pro_first_mobile"
+                          ? "order-first md:order-none"
+                          : ""
+                      } bg-slate-950 text-white md:-translate-y-4 md:scale-[1.02] shadow-[0_30px_80px_rgba(2,8,23,0.25)]`
                     : "bg-white text-slate-950 border border-slate-200 hover:border-blue-300 hover:shadow-[0_20px_50px_rgba(37,99,235,0.08)]"
                 }`}
               >

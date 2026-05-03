@@ -1,0 +1,35 @@
+{
+  "summary": "Iter4 testing complete — variant A/B field end-to-end, /api/leads/stats aggregate, and non-blocking Resend email + Twilio SMS notifications. 11/11 backend tests pass; all FE flows pass (pro_first_mobile and control variants reorder correctly at 390x844, sticky across reload, POST body carries variant matching localStorage).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_leads_iter4.py",
+    "/app/backend/tests/test_leads.py",
+    "/app/test_reports/pytest/iter4_backend.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "notifications.py cleanly gates Twilio on 4-key presence (sid/token/from/to) — confirmed by log lines 'Twilio SMS skipped — one or more credentials missing.' and 'Lead notification skipped (sms).' on every POST.",
+    "Resend send uses from=onboarding@resend.dev and to=LEAD_NOTIFY_EMAIL (jlgeneralcontracting24@gmail.com) regardless of lead.email, which is the correct pattern to avoid Resend's 'test-mode recipient must match account' restriction. Email log line 'Lead notification sent (email).' observed within ~100-400ms AFTER the 201 response (BackgroundTasks working as intended).",
+    "LeadCreate.variant is optional/nullable with max_length=40 — good. Empty string is normalized to None ((payload.variant or '').strip() or None). Clean.",
+    "/api/leads/stats uses $ifNull to bucket missing variants under 'unknown' — verified in test. Shares sum to ~1.0.",
+    "Minor: variant field has no enum/whitelist validation server-side; any 40-char string is accepted. Acceptable for an experiment but could drift if new variants are added without coordination."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_leads_iter4.py (new)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "N/A (no auth). /app/memory/test_credentials.md not required for this iteration.",
+  "seed_data_creation": "Several TEST_-prefixed leads with variants (pro_first_mobile / control / null) inserted during pytest + 1 FE form submission (Iter4 FE / variant=control). Cleanly isolated via uuid-based emails.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iter4 adds: (1) LeadCreate.variant optional field persisted to MongoDB + echoed in 201 response; (2) GET /api/leads/stats returns {total, by_variant:[{variant,count,share}]} with 'unknown' bucket for null variants; (3) FastAPI BackgroundTasks(notify_new_lead) fires Resend email + Twilio SMS fire-and-forget — HTTP response <1s even with email latency. Frontend: /app/frontend/src/lib/abVariant.js sticky 50/50 ('pro_first_mobile' | 'control') in localStorage 'ss_ab_pricing_mobile_v1'; Pricing.jsx sets data-variant attr and conditionally applies 'order-first md:order-none' on Pro card when pro_first_mobile. CTASection posts variant in body. Twilio SMS is dormant by design (SID/From/To empty); only Auth Token set. Verified log lines 'Twilio SMS skipped — one or more credentials missing.' and 'Lead notification sent (email).' post-response.",
+  "verification_evidence": {
+    "backend_tests": "11/11 passed: test_create_lead_with_variant, test_create_lead_without_variant_is_unknown_in_stats, test_variant_control_in_stats (shares sum to ~1.0), test_post_leads_fast_response (<2s including network RT), test_stats_schema, and 6 regression tests on /, /audio/demo-call/script, /audio/demo-call, /status (GET/POST), /leads (GET).",
+    "notification_logs": "Confirmed in /var/log/supervisor/backend.err.log: 'Twilio SMS skipped — one or more credentials missing.' + 'Lead notification skipped (sms).' on every POST. 'Lead notification sent (email).' observed ~100-400ms AFTER the 201 response (proves BackgroundTasks is non-blocking).",
+    "frontend_variants_mobile_390x844": "pro_first_mobile → y(pro)=439.9 < y(starter)=1136.4 < y(scale)=1788.4 (Pro topmost). control → y(starter)=439.9 < y(pro)=1091.9 < y(scale)=1788.4 (middle). data-variant attribute matches localStorage value on all 3 tiers.",
+    "sticky_variant": "After first reload, localStorage 'ss_ab_pricing_mobile_v1' value unchanged (control stayed control).",
+    "frontend_post_body": "Intercepted POST /api/leads body: {name:'Iter4 FE', business:'Iter4 Co', phone:'5555557777', email:'iter4fe@example.com', source:'landing-cta', variant:'control'} → 201. Form cleared + success toast displayed. No console errors.",
+    "regression_sections_desktop": "hero-section, services-section, audio-player-section (iter report used wrong id name; verified present via grep), pricing-section, faq-section, cta-section all rendered; header 'Pricing' link scrolls to section."
+  }
+}

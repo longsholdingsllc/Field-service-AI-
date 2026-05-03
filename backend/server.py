@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException
+from fastapi import FastAPI, APIRouter, HTTPException, BackgroundTasks
 from fastapi.responses import FileResponse, JSONResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -14,6 +14,8 @@ from datetime import datetime, timezone
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
+
+from notifications import notify_new_lead  # noqa: E402  (after load_dotenv)
 
 # MongoDB connection
 mongo_url = os.environ['MONGO_URL']
@@ -49,6 +51,7 @@ class LeadCreate(BaseModel):
     phone: str = Field(..., min_length=5, max_length=40)
     email: str = Field(..., min_length=3, max_length=160)
     source: str | None = Field(default="landing-cta", max_length=60)
+    variant: str | None = Field(default=None, max_length=40)
 
 
 class Lead(BaseModel):
@@ -59,6 +62,7 @@ class Lead(BaseModel):
     phone: str
     email: str
     source: str = "landing-cta"
+    variant: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
@@ -164,8 +168,8 @@ async def get_demo_call_audio():
 
 
 @api_router.post("/leads", response_model=Lead, status_code=201)
-async def create_lead(payload: LeadCreate):
-    """Persist a demo-request lead from the landing page."""
+async def create_lead(payload: LeadCreate, background_tasks: BackgroundTasks):
+    """Persist a demo-request lead from the landing page and notify via email + SMS."""
     email = payload.email.strip().lower()
     if "@" not in email or "." not in email.split("@")[-1]:
         raise HTTPException(status_code=400, detail="Please provide a valid email address.")
@@ -176,21 +180,43 @@ async def create_lead(payload: LeadCreate):
         phone=payload.phone.strip(),
         email=email,
         source=(payload.source or "landing-cta").strip(),
+        variant=(payload.variant or "").strip() or None,
     )
     doc = lead.model_dump()
     doc["created_at"] = doc["created_at"].isoformat()
     await db.leads.insert_one(doc)
-    logger.info("New lead captured: %s · %s", lead.name, lead.email)
+    logger.info("New lead captured: %s · %s · variant=%s", lead.name, lead.email, lead.variant)
+
+    # Fire-and-forget notifications — never block the HTTP response.
+    background_tasks.add_task(notify_new_lead, doc)
     return lead
 
 
 @api_router.get("/leads", response_model=List[Lead])
 async def list_leads(limit: int = 100):
-    docs = await db.leads.find({}, {"_id": 0}).sort("created_at", -1).to_list(min(limit, 500))
+    docs = await db.leads.find({}, {"_id": 0}).sort("created_at", -1).to_list(min(max(limit, 1), 500))
     for d in docs:
         if isinstance(d.get("created_at"), str):
             d["created_at"] = datetime.fromisoformat(d["created_at"])
     return docs
+
+
+@api_router.get("/leads/stats")
+async def lead_stats():
+    """Aggregate lead counts by variant — used to compare A/B variants."""
+    pipeline = [
+        {"$group": {"_id": {"$ifNull": ["$variant", "unknown"]}, "count": {"$sum": 1}}},
+        {"$sort": {"count": -1}},
+    ]
+    rows = await db.leads.aggregate(pipeline).to_list(50)
+    total = sum(r["count"] for r in rows)
+    return {
+        "total": total,
+        "by_variant": [
+            {"variant": r["_id"], "count": r["count"], "share": (r["count"] / total) if total else 0}
+            for r in rows
+        ],
+    }
 
 
 @api_router.post("/status", response_model=StatusCheck)

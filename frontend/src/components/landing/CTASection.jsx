@@ -3,6 +3,7 @@ import axios from "axios";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { ArrowRight, PhoneCall, ShieldCheck, Sparkles } from "lucide-react";
+import { getPricingVariant } from "@/lib/abVariant";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -34,6 +35,7 @@ export const CTASection = () => {
         phone: form.phone,
         email: form.email,
         source: "landing-cta",
+        variant: getPricingVariant(),
       });
       toast.success("Demo booked. We'll call you within 1 business hour.", {
         description: `Thanks ${form.name} — look out for a call from (415) 555-SPEAK.`,
