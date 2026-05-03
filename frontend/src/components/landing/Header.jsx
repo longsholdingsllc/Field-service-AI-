@@ -20,8 +20,9 @@ export const Header = () => {
 
   const navItems = [
     { id: "services", label: "Services" },
+    { id: "hear-it", label: "Hear it" },
     { id: "how-it-works", label: "How it works" },
-    { id: "outcomes", label: "Outcomes" },
+    { id: "pricing", label: "Pricing" },
     { id: "faq", label: "FAQ" },
   ];
 

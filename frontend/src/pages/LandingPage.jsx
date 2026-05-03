@@ -2,8 +2,10 @@ import Header from "@/components/landing/Header";
 import Hero from "@/components/landing/Hero";
 import TrustedBy from "@/components/landing/TrustedBy";
 import Services from "@/components/landing/Services";
+import AudioCallPlayer from "@/components/landing/AudioCallPlayer";
 import HowItWorks from "@/components/landing/HowItWorks";
 import Outcomes from "@/components/landing/Outcomes";
+import Pricing from "@/components/landing/Pricing";
 import CTASection from "@/components/landing/CTASection";
 import FAQ from "@/components/landing/FAQ";
 import Footer from "@/components/landing/Footer";
@@ -18,8 +20,10 @@ export default function LandingPage() {
       <Hero />
       <TrustedBy />
       <Services />
+      <AudioCallPlayer />
       <HowItWorks />
       <Outcomes />
+      <Pricing />
       <FAQ />
       <CTASection />
       <Footer />
