@@ -43,6 +43,25 @@ class StatusCheckCreate(BaseModel):
     client_name: str
 
 
+class LeadCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=120)
+    business: str | None = Field(default=None, max_length=160)
+    phone: str = Field(..., min_length=5, max_length=40)
+    email: str = Field(..., min_length=3, max_length=160)
+    source: str | None = Field(default="landing-cta", max_length=60)
+
+
+class Lead(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    name: str
+    business: str | None = None
+    phone: str
+    email: str
+    source: str = "landing-cta"
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
 # ---- Demo call script (alternating caller/agent voices) ----
 DEMO_CALL_SCRIPT = [
     {
@@ -142,6 +161,36 @@ async def get_demo_call_audio():
         media_type="audio/mpeg",
         headers={"Cache-Control": "public, max-age=86400"},
     )
+
+
+@api_router.post("/leads", response_model=Lead, status_code=201)
+async def create_lead(payload: LeadCreate):
+    """Persist a demo-request lead from the landing page."""
+    email = payload.email.strip().lower()
+    if "@" not in email or "." not in email.split("@")[-1]:
+        raise HTTPException(status_code=400, detail="Please provide a valid email address.")
+
+    lead = Lead(
+        name=payload.name.strip(),
+        business=(payload.business or "").strip() or None,
+        phone=payload.phone.strip(),
+        email=email,
+        source=(payload.source or "landing-cta").strip(),
+    )
+    doc = lead.model_dump()
+    doc["created_at"] = doc["created_at"].isoformat()
+    await db.leads.insert_one(doc)
+    logger.info("New lead captured: %s · %s", lead.name, lead.email)
+    return lead
+
+
+@api_router.get("/leads", response_model=List[Lead])
+async def list_leads(limit: int = 100):
+    docs = await db.leads.find({}, {"_id": 0}).sort("created_at", -1).to_list(min(limit, 500))
+    for d in docs:
+        if isinstance(d.get("created_at"), str):
+            d["created_at"] = datetime.fromisoformat(d["created_at"])
+    return docs
 
 
 @api_router.post("/status", response_model=StatusCheck)

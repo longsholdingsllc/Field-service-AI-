@@ -1,0 +1,30 @@
+{
+  "summary": "Iter3 testing complete — verified /api/leads backend persistence + validation, demo form real POST integration, and mobile-first Pro pricing reorder. 12/12 backend tests pass, all frontend flows pass.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_leads.py",
+    "/app/test_reports/pytest/iter3_backend.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "LeadCreate.email uses min_length=3 only — relies on the endpoint's manual '@'+'.' check. Fine, but switching to pydantic EmailStr would be cleaner and avoid the mixed 400/422 pattern.",
+    "create_lead manually serializes created_at to ISO and list_leads parses it back — consistent with status_checks pattern; acceptable. Consider storing as native datetime for easier sort/aggregation.",
+    "list_leads uses min(limit, 500) so cap works, but there is no lower bound/validation — a negative or zero limit would return [] silently. Low priority."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_leads.py (new)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "N/A (no auth)",
+  "seed_data_creation": "A handful of TEST_-prefixed leads inserted into leads collection during pytest run; not cleaned up but isolated by unique uuid-based emails.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iter3 adds POST/GET /api/leads (persisted in MongoDB, email lowercased/trimmed, invalid email -> 400, missing fields -> 422, list sorted desc, limit capped at 500). Frontend CTASection now axios.posts to /api/leads and clears form on success / shows error toast on failure. Pricing Pro tier has 'order-first md:order-none' so Pro renders first on mobile (<768px) and middle on desktop. Verified: desktop order Starter→Pro→Scale at 1280px; mobile Pro first at 390px. POST body verified via page.on('request').",
+  "verification_evidence": {
+    "backend_tests": "12 passed (test_leads.py) covering create+persist, email lowercase+trim, business optional, empty name 422, missing phone 422, invalid email 400, list sorted desc, limit cap, and regression on /, /audio/*, /status.",
+    "frontend_post": "Intercepted POST https://field-service-ai-3.preview.emergentagent.com/api/leads with body {name:'Alex Rivera', business:'Rivera Plumbing', phone:'5555550199', email:'alex@test.io', source:'landing-cta'} -> 201; form cleared; success toast 'Demo booked...' shown.",
+    "pricing_positions": "desktop x: starter=40, pro=447, scale=861 (row). mobile y: pro first (visible top), starter=220, scale=872.",
+    "error_path": "Direct POST with email='notanemail' returns 400 {detail:'Please provide a valid email address.'}"
+  }
+}

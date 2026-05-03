@@ -98,7 +98,7 @@ export const Pricing = () => {
                 data-testid={`pricing-tier-${tier.id}`}
                 className={`group relative flex flex-col p-8 md:p-10 transition-all duration-500 ${
                   dark
-                    ? "bg-slate-950 text-white md:-translate-y-4 md:scale-[1.02] shadow-[0_30px_80px_rgba(2,8,23,0.25)]"
+                    ? "order-first md:order-none bg-slate-950 text-white md:-translate-y-4 md:scale-[1.02] shadow-[0_30px_80px_rgba(2,8,23,0.25)]"
                     : "bg-white text-slate-950 border border-slate-200 hover:border-blue-300 hover:shadow-[0_20px_50px_rgba(37,99,235,0.08)]"
                 }`}
               >

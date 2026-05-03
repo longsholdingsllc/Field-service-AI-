@@ -1,7 +1,11 @@
 import { useState } from "react";
+import axios from "axios";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { ArrowRight, PhoneCall, ShieldCheck, Sparkles } from "lucide-react";
+
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+const API = `${BACKEND_URL}/api`;
 
 export const CTASection = () => {
   const [form, setForm] = useState({
@@ -16,20 +20,33 @@ export const CTASection = () => {
     setForm({ ...form, [e.target.name]: e.target.value });
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!form.name || !form.email || !form.phone) {
       toast.error("Please fill out name, phone, and email.");
       return;
     }
     setSubmitting(true);
-    setTimeout(() => {
+    try {
+      await axios.post(`${API}/leads`, {
+        name: form.name,
+        business: form.business || null,
+        phone: form.phone,
+        email: form.email,
+        source: "landing-cta",
+      });
       toast.success("Demo booked. We'll call you within 1 business hour.", {
         description: `Thanks ${form.name} — look out for a call from (415) 555-SPEAK.`,
       });
       setForm({ name: "", business: "", phone: "", email: "" });
+    } catch (err) {
+      const detail =
+        err?.response?.data?.detail ||
+        "Couldn't submit your request. Please try again.";
+      toast.error("Submission failed", { description: detail });
+    } finally {
       setSubmitting(false);
-    }, 900);
+    }
   };
 
   return (
