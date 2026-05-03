@@ -35,13 +35,12 @@ export const Hero = () => {
               Never miss<br />
               a lead <span className="inline-block">again.</span>
               <br />
-              <span className="relative inline-block">
+              <span className="relative inline-block align-baseline leading-[0.92]">
                 <span className="relative z-10 text-blue-600">
                   24/7 AI answering
                 </span>
                 <span className="absolute left-0 right-0 bottom-1 h-3 bg-blue-100 -z-0" />
-              </span>
-              <br />
+              </span>{" "}
               <span className="text-slate-950">for the trades.</span>
             </h1>
 
