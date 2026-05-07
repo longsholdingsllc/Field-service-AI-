@@ -48,3 +48,13 @@ Build a professional landing page for 'ServiceSpeak AI', an AI Automation Agency
 ## Tests
 - Iteration 1: frontend 19/19 pass (100%)
 - Iteration 2: backend 5/5 pass + frontend 100% pass
+
+## Iteration 5 (Dec 2025)
+- Protected `GET /api/leads`, `GET /api/leads/stats`, `POST /api/admin/roundup/send` behind `X-Admin-Token` header (env `ADMIN_TOKEN`). POST /api/leads remains public.
+- Admin dashboard at `/admin` — token login, 3 stat cards, A/B variant bars, sortable lead table, CSV export, manual roundup trigger, sign-out.
+- APScheduler cron job fires `send_daily_roundup` at **09:00 UTC** daily — queries prior-day leads, aggregates by variant, sends styled HTML digest via Resend.
+- New file: `/app/backend/roundup.py`, `/app/frontend/src/pages/AdminPage.jsx`
+- ADMIN_TOKEN rotatable via .env (no code change needed); tests confirmed 401 auth and full admin flows.
+
+## Tests
+- Iter5: backend 14/14 + frontend 9/9 admin flows + landing CTA regression — 100%
