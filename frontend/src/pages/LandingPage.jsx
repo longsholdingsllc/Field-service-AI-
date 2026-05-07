@@ -5,6 +5,7 @@ import Services from "@/components/landing/Services";
 import AudioCallPlayer from "@/components/landing/AudioCallPlayer";
 import HowItWorks from "@/components/landing/HowItWorks";
 import Outcomes from "@/components/landing/Outcomes";
+import ReviewPilot from "@/components/landing/ReviewPilot";
 import Pricing from "@/components/landing/Pricing";
 import CTASection from "@/components/landing/CTASection";
 import FAQ from "@/components/landing/FAQ";
@@ -23,6 +24,7 @@ export default function LandingPage() {
       <AudioCallPlayer />
       <HowItWorks />
       <Outcomes />
+      <ReviewPilot />
       <Pricing />
       <FAQ />
       <CTASection />

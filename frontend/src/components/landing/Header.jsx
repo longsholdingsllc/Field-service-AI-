@@ -22,6 +22,7 @@ export const Header = () => {
     { id: "services", label: "Services" },
     { id: "hear-it", label: "Hear it" },
     { id: "how-it-works", label: "How it works" },
+    { id: "our-software", label: "Software" },
     { id: "pricing", label: "Pricing" },
     { id: "faq", label: "FAQ" },
   ];
