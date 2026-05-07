@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException, BackgroundTasks
+from fastapi import FastAPI, APIRouter, HTTPException, BackgroundTasks, Header, Depends
 from fastapi.responses import FileResponse, JSONResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -8,7 +8,7 @@ import asyncio
 import logging
 from pathlib import Path
 from pydantic import BaseModel, Field, ConfigDict
-from typing import List
+from typing import List, Optional
 import uuid
 from datetime import datetime, timezone
 
@@ -16,6 +16,7 @@ ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
 from notifications import notify_new_lead  # noqa: E402  (after load_dotenv)
+from roundup import send_daily_roundup  # noqa: E402
 
 # MongoDB connection
 mongo_url = os.environ['MONGO_URL']
@@ -32,6 +33,16 @@ _audio_gen_lock = asyncio.Lock()
 
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
+
+
+# ---- Admin auth dependency ----
+def require_admin(x_admin_token: Optional[str] = Header(default=None)):
+    expected = (os.environ.get("ADMIN_TOKEN") or "").strip()
+    if not expected:
+        raise HTTPException(status_code=503, detail="Admin not configured")
+    if not x_admin_token or x_admin_token.strip() != expected:
+        raise HTTPException(status_code=401, detail="Invalid or missing admin token")
+    return True
 
 
 class StatusCheck(BaseModel):
@@ -193,7 +204,7 @@ async def create_lead(payload: LeadCreate, background_tasks: BackgroundTasks):
 
 
 @api_router.get("/leads", response_model=List[Lead])
-async def list_leads(limit: int = 100):
+async def list_leads(limit: int = 100, _: bool = Depends(require_admin)):
     docs = await db.leads.find({}, {"_id": 0}).sort("created_at", -1).to_list(min(max(limit, 1), 500))
     for d in docs:
         if isinstance(d.get("created_at"), str):
@@ -202,7 +213,7 @@ async def list_leads(limit: int = 100):
 
 
 @api_router.get("/leads/stats")
-async def lead_stats():
+async def lead_stats(_: bool = Depends(require_admin)):
     """Aggregate lead counts by variant — used to compare A/B variants."""
     pipeline = [
         {"$group": {"_id": {"$ifNull": ["$variant", "unknown"]}, "count": {"$sum": 1}}},
@@ -217,6 +228,12 @@ async def lead_stats():
             for r in rows
         ],
     }
+
+
+@api_router.post("/admin/roundup/send")
+async def trigger_roundup(_: bool = Depends(require_admin)):
+    """Manually trigger the daily roundup email (for testing / replays)."""
+    return await send_daily_roundup(db)
 
 
 @api_router.post("/status", response_model=StatusCheck)
@@ -258,3 +275,30 @@ logger = logging.getLogger(__name__)
 @app.on_event("shutdown")
 async def shutdown_db_client():
     client.close()
+    try:
+        if scheduler.running:
+            scheduler.shutdown(wait=False)
+    except Exception:
+        pass
+
+
+# ---- APScheduler for daily roundup ----
+from apscheduler.schedulers.asyncio import AsyncIOScheduler  # noqa: E402
+
+scheduler = AsyncIOScheduler(timezone="UTC")
+
+
+@app.on_event("startup")
+async def _start_scheduler():
+    # Run every day at 09:00 UTC
+    scheduler.add_job(
+        send_daily_roundup,
+        "cron",
+        hour=9,
+        minute=0,
+        args=[db],
+        id="daily_lead_roundup",
+        replace_existing=True,
+    )
+    scheduler.start()
+    logger.info("Scheduler started — daily lead roundup at 09:00 UTC.")

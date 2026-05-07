@@ -1,0 +1,39 @@
+{
+  "summary": "Iter5 testing complete — token-protected admin endpoints + APScheduler daily roundup + admin dashboard UI fully verified. 14/14 backend tests pass; all 9 admin FE flows pass + landing CTA still public/working.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_admin_iter5.py",
+    "/app/test_reports/pytest/iter5_backend.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "require_admin dependency in server.py is clean — returns 503 if ADMIN_TOKEN unset (fail-fast) and 401 with consistent detail 'Invalid or missing admin token' for missing/wrong header. Token comparison strips whitespace on both sides — no issues.",
+    "POST /api/leads correctly remains public (no Depends(require_admin)) — CTA form submission still returns 201; backward compatible.",
+    "AsyncIOScheduler is registered in @app.on_event('startup') with replace_existing=True and id='daily_lead_roundup' — confirmed log line 'Scheduler started — daily lead roundup at 09:00 UTC.' on every backend boot. Shutdown handler guards scheduler.running before .shutdown(), avoiding errors on cold-shutdown.",
+    "roundup.py uses ISO-string range query on created_at which is correct because all dates are stored as ISO-8601 (sortable). Fallback path returns {status:'skipped', leads:N} when RESEND_API_KEY/LEAD_NOTIFY_EMAIL absent — handled gracefully in FE toast.",
+    "AdminPage.jsx: token persisted to localStorage 'ss_admin_token' on submit; load() runs in effect after authed=true; on 401 it auto-logs out + toast.error('Invalid admin token'). Clean UX.",
+    "Minor: AdminPage CSV export computes the blob client-side from already-fetched leads (capped at limit=200) — fine for now, but at >200 leads admin would need server-side CSV. Not blocking.",
+    "Minor: roundup.py uses string comparison for created_at; works because format is consistent ISO-8601 with timezone. Acceptable.",
+    "Minor: ADMIN_TOKEN is currently a 32-char alphanumeric — adequate entropy, but consider documenting rotation procedure since token is displayed plaintext in logs if mis-typed (auto-redaction not implemented)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_admin_iter5.py (new)"
+  ],
+  "success_rate": {"backend": "100% (14/14)", "frontend": "100% (9/9 admin flows + landing CTA regression)"},
+  "test_credentials": "ADMIN_TOKEN=OjTfujkwg7TByoIUN6scOb4BEYx2pSsX (read from /app/backend/.env). Header: X-Admin-Token. Used for all gated endpoints + AdminPage login. Updated /app/memory/test_credentials.md is NOT modified — token is read directly from .env at runtime.",
+  "seed_data_creation": "Test created several TEST_-prefixed leads via /api/leads (variants: pro_first_mobile, control, null) plus 1 FE submission (Iter5 FE / variant=pro_first_mobile) — all isolated via uuid emails. Final dashboard shows 20 leads / 3 variant buckets (unknown 45%, pro_first_mobile 30%, control 25%).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iter5 surface: (1) require_admin FastAPI dependency on /api/leads (GET), /api/leads/stats (GET), /api/admin/roundup/send (POST) — header X-Admin-Token must equal env ADMIN_TOKEN; otherwise 401 'Invalid or missing admin token'. (2) AsyncIOScheduler runs send_daily_roundup at cron 'hour=9 minute=0' UTC, job id 'daily_lead_roundup'. (3) /app/frontend/src/pages/AdminPage.jsx persists token to localStorage 'ss_admin_token'; on reload, dashboard is rendered directly. testids: admin-login-page, admin-token-input, admin-login-btn, admin-dashboard, admin-refresh-btn, admin-logout-btn, admin-send-roundup-btn, admin-export-csv-btn, stat-total, stat-variants, stat-roundup, ab-breakdown, ab-row-{variant}, leads-table, lead-row-{id}. POST /api/leads stays PUBLIC. CSV download verified via page.expect_download() — filename 'servicespeak-leads-YYYY-MM-DD.csv'. Manual roundup trigger returned status='sent' (Resend live in test mode, recipient jlgeneralcontracting24@gmail.com).",
+  "verification_evidence": {
+    "backend_pytest": "14/14 passed in 1.82s — covers 401 without token, 401 with wrong token, 200 with correct token (sort desc verified), stats schema, roundup trigger returns valid status, public POST /api/leads still 201, regression on /, /audio/demo-call/script, /status (GET+POST).",
+    "scheduler_log": "Confirmed in /var/log/supervisor/backend.err.log: 'Scheduler started — daily lead roundup at 09:00 UTC.' on every backend startup. apscheduler.scheduler 'Scheduler started' line precedes our marker.",
+    "fe_login_flow": "Wrong token → toast 'Invalid admin token' + stays on admin-login-page (logout() called on 401). Correct token → dashboard renders, localStorage.ss_admin_token=ADMIN_TOKEN. Reload bypasses login.",
+    "fe_dashboard": "stat-total=20, stat-variants=3, stat-roundup='09:00 UTC'. ab-breakdown shows ab-row-unknown / ab-row-pro_first_mobile / ab-row-control with correct shares (45/30/25%). leads-table shows 20 lead-row-<id> entries with desc time order.",
+    "fe_send_roundup": "Click admin-send-roundup-btn → POST /api/admin/roundup/send → toast 'Roundup sent — N leads' visible.",
+    "fe_export_csv": "page.expect_download() captured download with suggested_filename='servicespeak-leads-2026-05-07.csv'.",
+    "fe_logout": "admin-logout-btn → localStorage.ss_admin_token cleared (null) + admin-login-page rendered.",
+    "landing_cta_regression": "Landing form (testid demo-form) submitted → POST /api/leads → 201 with body {id, name, business, phone, email, source, variant:'pro_first_mobile', created_at}. No auth header sent — public endpoint confirmed working."
+  }
+}
