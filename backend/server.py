@@ -251,15 +251,18 @@ async def trigger_roundup(_: bool = Depends(require_admin)):
 
 
 @api_router.post("/reviewpilot/draft", response_model=ReviewDraftResponse)
-async def reviewpilot_draft(payload: ReviewDraftRequest):
+async def reviewpilot_draft(payload: ReviewDraftRequest, cache_busted: bool = False):
     """Generate an on-brand AI reply for a customer review (ReviewPilot demo).
 
     Identical (text + rating + customer + business) requests are served from
     MongoDB cache to cut LLM cost on viral traffic. Cache expires in 30 days
     via TTL index registered at startup.
+
+    Use ?cache_busted=true to force a fresh LLM call (ops / QA replays).
     """
     import hashlib
     import json
+    import re
     import uuid as _uuid
     from emergentintegrations.llm.chat import LlmChat, UserMessage
 
@@ -269,25 +272,29 @@ async def reviewpilot_draft(payload: ReviewDraftRequest):
 
     business = (payload.business_name or "the team").strip()
     customer = (payload.customer_name or "the customer").strip()
-    review_norm = " ".join(payload.review_text.strip().lower().split())
+    # Normalize: lowercase, collapse whitespace, strip punctuation entirely so
+    # "Will use again!" and "Will use again." hit the same cache entry.
+    review_norm = re.sub(r"[^\w\s]", "", payload.review_text.lower())
+    review_norm = " ".join(review_norm.split())
 
     cache_key = hashlib.sha256(
-        f"v1|{payload.rating}|{customer.lower()}|{business.lower()}|{review_norm}".encode()
+        f"v2|{payload.rating}|{customer.lower()}|{business.lower()}|{review_norm}".encode()
     ).hexdigest()
 
-    cached_doc = await db.reviewpilot_cache.find_one({"_id": cache_key}, {"_id": 0})
-    if cached_doc:
-        await db.reviewpilot_cache.update_one(
-            {"_id": cache_key},
-            {"$inc": {"hits": 1}, "$set": {"last_hit_at": datetime.now(timezone.utc).isoformat()}},
-        )
-        logger.info("ReviewPilot cache HIT (%s…)", cache_key[:10])
-        return ReviewDraftResponse(
-            reply=cached_doc["reply"],
-            sentiment=cached_doc["sentiment"],
-            escalate=cached_doc["escalate"],
-            cached=True,
-        )
+    if not cache_busted:
+        cached_doc = await db.reviewpilot_cache.find_one({"_id": cache_key}, {"_id": 0})
+        if cached_doc:
+            await db.reviewpilot_cache.update_one(
+                {"_id": cache_key},
+                {"$inc": {"hits": 1}, "$set": {"last_hit_at": datetime.now(timezone.utc).isoformat()}},
+            )
+            logger.info("ReviewPilot cache HIT (%s…)", cache_key[:10])
+            return ReviewDraftResponse(
+                reply=cached_doc["reply"],
+                sentiment=cached_doc["sentiment"],
+                escalate=cached_doc["escalate"],
+                cached=True,
+            )
 
     system_msg = (
         "You are ReviewPilot — an AI that drafts on-brand replies to Google / Yelp / Facebook "
@@ -351,20 +358,27 @@ async def reviewpilot_draft(payload: ReviewDraftRequest):
     now = datetime.now(timezone.utc)
     expires_at = now + timedelta(days=30)
     try:
-        await db.reviewpilot_cache.insert_one(
+        await db.reviewpilot_cache.update_one(
+            {"_id": cache_key},
             {
-                "_id": cache_key,
-                "reply": reply,
-                "sentiment": sentiment,
-                "escalate": escalate,
-                "rating": payload.rating,
-                "hits": 1,
-                "created_at": now.isoformat(),
-                "last_hit_at": now.isoformat(),
-                "expires_at": expires_at,
-            }
+                "$set": {
+                    "reply": reply,
+                    "sentiment": sentiment,
+                    "escalate": escalate,
+                    "rating": payload.rating,
+                    "created_at": now.isoformat(),
+                    "last_hit_at": now.isoformat(),
+                    "expires_at": expires_at,
+                },
+                "$setOnInsert": {"hits": 1},
+            },
+            upsert=True,
         )
-        logger.info("ReviewPilot cache MISS — stored (%s…)", cache_key[:10])
+        logger.info(
+            "ReviewPilot cache %s (%s…)",
+            "BUST-REFRESH" if cache_busted else "MISS — stored",
+            cache_key[:10],
+        )
     except Exception as exc:  # noqa: BLE001 — cache write must never break the reply
         logger.warning("ReviewPilot cache write failed: %s", exc)
 
@@ -401,6 +415,12 @@ async def reviewpilot_cache_stats(_: bool = Depends(require_admin)):
         "savings_ratio": (
             (summary.get("total_hits", 0) - summary.get("entries", 0))
             / max(summary.get("total_hits", 1), 1)
+        ),
+        # Conservative per-call LLM cost estimate for Claude Haiku 4.5
+        # (~500 input + ~150 output tokens ≈ $0.0015). Tweak if pricing changes.
+        "savings_usd": round(
+            max(summary.get("total_hits", 0) - summary.get("entries", 0), 0) * 0.0015,
+            4,
         ),
         "top": top,
     }

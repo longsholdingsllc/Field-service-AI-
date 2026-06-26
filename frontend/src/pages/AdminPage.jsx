@@ -11,6 +11,7 @@ import {
   Users,
   BarChart3,
   Send,
+  Database,
 } from "lucide-react";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
@@ -22,6 +23,7 @@ export default function AdminPage() {
   const [authed, setAuthed] = useState(false);
   const [input, setInput] = useState("");
   const [stats, setStats] = useState(null);
+  const [cacheStats, setCacheStats] = useState(null);
   const [leads, setLeads] = useState([]);
   const [loading, setLoading] = useState(false);
   const [sendingRoundup, setSendingRoundup] = useState(false);
@@ -43,12 +45,14 @@ export default function AdminPage() {
     setLoading(true);
     try {
       const headers = { "X-Admin-Token": token };
-      const [s, l] = await Promise.all([
+      const [s, l, c] = await Promise.all([
         axios.get(`${API}/leads/stats`, { headers }),
         axios.get(`${API}/leads?limit=200`, { headers }),
+        axios.get(`${API}/reviewpilot/cache/stats`, { headers }),
       ]);
       setStats(s.data);
       setLeads(l.data);
+      setCacheStats(c.data);
     } catch (e) {
       if (e?.response?.status === 401) {
         toast.error("Invalid admin token");
@@ -261,7 +265,7 @@ export default function AdminPage() {
         </div>
 
         {/* Stat cards */}
-        <div className="grid sm:grid-cols-3 gap-5 mb-10">
+        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-10">
           <StatCard
             icon={Users}
             label="Total leads"
@@ -281,6 +285,7 @@ export default function AdminPage() {
             hint="Automated · Resend"
             testId="stat-roundup"
           />
+          <CacheCard data={cacheStats} />
         </div>
 
         {/* A/B breakdown */}
@@ -453,6 +458,40 @@ const StatCard = ({ icon: Icon, label, value, hint, testId }) => (
     </div>
   </div>
 );
+
+const CacheCard = ({ data }) => {
+  const entries = data?.entries ?? 0;
+  const hits = data?.total_hits ?? 0;
+  const ratio = data?.savings_ratio ?? 0;
+  const usd = data?.savings_usd ?? 0;
+  const dollars = usd >= 0.01 ? `$${usd.toFixed(2)}` : `${Math.round(usd * 100)}¢`;
+  return (
+    <div
+      data-testid="stat-cache"
+      className="bg-slate-950 text-white p-6 flex items-start gap-4"
+    >
+      <div className="w-10 h-10 shrink-0 bg-blue-500 flex items-center justify-center">
+        <Database size={18} className="text-white" strokeWidth={2.25} />
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="mono-overline text-slate-400">ReviewPilot cache</div>
+        <div
+          data-testid="cache-savings-usd"
+          className="font-display font-black text-3xl text-blue-400 mt-1 leading-none"
+        >
+          {data ? dollars : "—"}
+        </div>
+        <div className="text-xs text-slate-400 mt-1.5 font-semibold flex flex-wrap gap-x-3 gap-y-0.5">
+          <span data-testid="cache-entries">{entries} entries</span>
+          <span>·</span>
+          <span data-testid="cache-hits">{hits} hits</span>
+          <span>·</span>
+          <span data-testid="cache-ratio">{(ratio * 100).toFixed(0)}% saved</span>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 const fmtTime = (iso) => {
   if (!iso) return "—";
