@@ -10,7 +10,7 @@ from pathlib import Path
 from pydantic import BaseModel, Field, ConfigDict
 from typing import List, Optional
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -67,6 +67,7 @@ class ReviewDraftResponse(BaseModel):
     reply: str
     sentiment: str  # positive | mixed | negative
     escalate: bool
+    cached: bool = False
 
 
 class LeadCreate(BaseModel):
@@ -251,7 +252,13 @@ async def trigger_roundup(_: bool = Depends(require_admin)):
 
 @api_router.post("/reviewpilot/draft", response_model=ReviewDraftResponse)
 async def reviewpilot_draft(payload: ReviewDraftRequest):
-    """Generate an on-brand AI reply for a customer review (ReviewPilot demo)."""
+    """Generate an on-brand AI reply for a customer review (ReviewPilot demo).
+
+    Identical (text + rating + customer + business) requests are served from
+    MongoDB cache to cut LLM cost on viral traffic. Cache expires in 30 days
+    via TTL index registered at startup.
+    """
+    import hashlib
     import json
     import uuid as _uuid
     from emergentintegrations.llm.chat import LlmChat, UserMessage
@@ -262,6 +269,25 @@ async def reviewpilot_draft(payload: ReviewDraftRequest):
 
     business = (payload.business_name or "the team").strip()
     customer = (payload.customer_name or "the customer").strip()
+    review_norm = " ".join(payload.review_text.strip().lower().split())
+
+    cache_key = hashlib.sha256(
+        f"v1|{payload.rating}|{customer.lower()}|{business.lower()}|{review_norm}".encode()
+    ).hexdigest()
+
+    cached_doc = await db.reviewpilot_cache.find_one({"_id": cache_key}, {"_id": 0})
+    if cached_doc:
+        await db.reviewpilot_cache.update_one(
+            {"_id": cache_key},
+            {"$inc": {"hits": 1}, "$set": {"last_hit_at": datetime.now(timezone.utc).isoformat()}},
+        )
+        logger.info("ReviewPilot cache HIT (%s…)", cache_key[:10])
+        return ReviewDraftResponse(
+            reply=cached_doc["reply"],
+            sentiment=cached_doc["sentiment"],
+            escalate=cached_doc["escalate"],
+            cached=True,
+        )
 
     system_msg = (
         "You are ReviewPilot — an AI that drafts on-brand replies to Google / Yelp / Facebook "
@@ -301,7 +327,6 @@ async def reviewpilot_draft(payload: ReviewDraftRequest):
     text = (raw or "").strip()
     if text.startswith("```"):
         text = text.strip("`")
-        # strip optional 'json' language tag
         if text.lower().startswith("json"):
             text = text[4:].strip()
     start = text.find("{")
@@ -323,7 +348,62 @@ async def reviewpilot_draft(payload: ReviewDraftRequest):
     if not reply:
         raise HTTPException(status_code=502, detail="Empty AI reply.")
 
-    return ReviewDraftResponse(reply=reply, sentiment=sentiment, escalate=escalate)
+    now = datetime.now(timezone.utc)
+    expires_at = now + timedelta(days=30)
+    try:
+        await db.reviewpilot_cache.insert_one(
+            {
+                "_id": cache_key,
+                "reply": reply,
+                "sentiment": sentiment,
+                "escalate": escalate,
+                "rating": payload.rating,
+                "hits": 1,
+                "created_at": now.isoformat(),
+                "last_hit_at": now.isoformat(),
+                "expires_at": expires_at,
+            }
+        )
+        logger.info("ReviewPilot cache MISS — stored (%s…)", cache_key[:10])
+    except Exception as exc:  # noqa: BLE001 — cache write must never break the reply
+        logger.warning("ReviewPilot cache write failed: %s", exc)
+
+    return ReviewDraftResponse(
+        reply=reply, sentiment=sentiment, escalate=escalate, cached=False
+    )
+
+
+@api_router.get("/reviewpilot/cache/stats")
+async def reviewpilot_cache_stats(_: bool = Depends(require_admin)):
+    """Cache observability — total entries, total hits, top entries by hit count."""
+    pipeline = [
+        {
+            "$group": {
+                "_id": None,
+                "entries": {"$sum": 1},
+                "total_hits": {"$sum": "$hits"},
+            }
+        }
+    ]
+    agg = await db.reviewpilot_cache.aggregate(pipeline).to_list(1)
+    summary = agg[0] if agg else {"entries": 0, "total_hits": 0}
+    top = await (
+        db.reviewpilot_cache.find(
+            {}, {"_id": 0, "reply": 1, "sentiment": 1, "rating": 1, "hits": 1, "last_hit_at": 1}
+        )
+        .sort("hits", -1)
+        .limit(5)
+        .to_list(5)
+    )
+    return {
+        "entries": summary.get("entries", 0),
+        "total_hits": summary.get("total_hits", 0),
+        "savings_ratio": (
+            (summary.get("total_hits", 0) - summary.get("entries", 0))
+            / max(summary.get("total_hits", 1), 1)
+        ),
+        "top": top,
+    }
 
 
 @api_router.post("/status", response_model=StatusCheck)
@@ -380,6 +460,12 @@ scheduler = AsyncIOScheduler(timezone="UTC")
 
 @app.on_event("startup")
 async def _start_scheduler():
+    # TTL index for ReviewPilot cache (auto-expire entries after expires_at)
+    try:
+        await db.reviewpilot_cache.create_index("expires_at", expireAfterSeconds=0)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Failed to create reviewpilot_cache TTL index: %s", exc)
+
     # Run every day at 09:00 UTC
     scheduler.add_job(
         send_daily_roundup,
