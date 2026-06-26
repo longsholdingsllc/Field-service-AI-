@@ -1,3 +1,6 @@
+import { useState } from "react";
+import axios from "axios";
+import { toast } from "sonner";
 import {
   Star,
   Sparkles,
@@ -6,7 +9,14 @@ import {
   ShieldAlert,
   ArrowRight,
   ThumbsUp,
+  AlertTriangle,
+  Wand2,
+  Copy,
+  CheckCircle2,
 } from "lucide-react";
+
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+const API = `${BACKEND_URL}/api`;
 
 const FEATURES = [
   {
@@ -31,9 +41,67 @@ const FEATURES = [
   },
 ];
 
+const DEFAULT_REVIEW =
+  "Carlos came out same-day for our furnace and explained everything. Honest pricing, professional crew. Will use Apex again!";
+
 export const ReviewPilot = () => {
+  const [rating, setRating] = useState(5);
+  const [reviewText, setReviewText] = useState(DEFAULT_REVIEW);
+  const [customerName, setCustomerName] = useState("Maria");
+  const [businessName, setBusinessName] = useState("Apex Heating & Air");
+  const [draft, setDraft] = useState({
+    reply:
+      "Maria — thank you for the kind words! We'll let Carlos know he made your day. Welcome to the Apex family — we'll be here whenever you need us.",
+    sentiment: "positive",
+    escalate: false,
+  });
+  const [loading, setLoading] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [hasGenerated, setHasGenerated] = useState(false);
+
   const scrollToCTA = () =>
     document.getElementById("cta")?.scrollIntoView({ behavior: "smooth" });
+
+  const generate = async () => {
+    if (!reviewText.trim()) {
+      toast.error("Paste a review first.");
+      return;
+    }
+    setLoading(true);
+    try {
+      const { data } = await axios.post(`${API}/reviewpilot/draft`, {
+        review_text: reviewText.trim(),
+        rating,
+        customer_name: customerName.trim() || null,
+        business_name: businessName.trim() || null,
+      });
+      setDraft(data);
+      setHasGenerated(true);
+    } catch (err) {
+      const detail =
+        err?.response?.data?.detail || "Couldn't draft a reply. Try again.";
+      toast.error("Generation failed", { description: detail });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const copyReply = async () => {
+    try {
+      await navigator.clipboard.writeText(draft.reply);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    } catch {
+      toast.error("Couldn't copy.");
+    }
+  };
+
+  const sentimentTag =
+    draft.sentiment === "negative"
+      ? { label: "NEGATIVE · ESCALATE", cls: "text-red-400" }
+      : draft.sentiment === "mixed"
+      ? { label: "MIXED · REVIEW BEFORE POSTING", cls: "text-amber-400" }
+      : { label: "POSITIVE · READY TO POST", cls: "text-emerald-400" };
 
   return (
     <section
@@ -41,7 +109,6 @@ export const ReviewPilot = () => {
       data-testid="reviewpilot-section"
       className="relative bg-slate-50 py-24 md:py-32 border-b border-slate-200 overflow-hidden"
     >
-      {/* Subtle grid backdrop */}
       <div className="absolute inset-0 bg-grid-slate opacity-50 pointer-events-none" />
 
       <div className="relative max-w-7xl mx-auto px-6 md:px-10">
@@ -69,131 +136,239 @@ export const ReviewPilot = () => {
           </div>
         </div>
 
-        {/* Bento grid: visual mock + features */}
-        <div className="grid md:grid-cols-12 gap-6 md:gap-8">
-          {/* LEFT — Mock review + AI reply */}
+        {/* Interactive demo */}
+        <div className="grid md:grid-cols-12 gap-6 md:gap-8 mb-14">
+          {/* LEFT — Try it live */}
           <div
-            data-testid="reviewpilot-visual"
+            data-testid="reviewpilot-tryit"
             className="md:col-span-5 relative bg-slate-950 text-white p-7 md:p-9 shadow-[16px_16px_0_rgba(37,99,235,1)] flex flex-col"
           >
             <div className="flex items-center justify-between mb-6">
               <div className="flex items-center gap-2">
-                <span className="relative flex w-2.5 h-2.5">
-                  <span className="absolute inset-0 rounded-full bg-emerald-500 ss-pulse" />
-                  <span className="relative rounded-full w-2.5 h-2.5 bg-emerald-500" />
-                </span>
-                <span className="mono-overline text-slate-400">
-                  NEW REVIEW · GOOGLE
+                <Wand2 size={14} className="text-blue-400" />
+                <span className="mono-overline text-blue-400">
+                  TRY IT · LIVE AI
                 </span>
               </div>
               <span className="mono-overline text-slate-500 text-[0.55rem]">
-                JUST NOW
+                CLAUDE HAIKU
               </span>
             </div>
 
-            {/* Customer review */}
-            <div className="border-l-2 border-emerald-500 pl-4">
-              <div className="flex items-center gap-1.5 mb-2">
-                {[1, 2, 3, 4, 5].map((i) => (
-                  <Star
-                    key={i}
-                    size={14}
-                    fill="#fbbf24"
-                    strokeWidth={0}
-                  />
+            {/* Rating selector */}
+            <div className="mb-4">
+              <label className="mono-overline text-slate-500 block mb-2">
+                Rating
+              </label>
+              <div
+                className="flex items-center gap-1.5"
+                data-testid="reviewpilot-rating"
+              >
+                {[1, 2, 3, 4, 5].map((r) => (
+                  <button
+                    key={r}
+                    onClick={() => setRating(r)}
+                    type="button"
+                    data-testid={`star-${r}`}
+                    className="transition-transform hover:scale-110"
+                    aria-label={`${r} star${r > 1 ? "s" : ""}`}
+                  >
+                    <Star
+                      size={22}
+                      fill={r <= rating ? "#fbbf24" : "transparent"}
+                      stroke={r <= rating ? "#fbbf24" : "#475569"}
+                      strokeWidth={2}
+                    />
+                  </button>
                 ))}
-                <span className="ml-2 text-xs font-bold text-slate-400">
-                  Maria K.
+                <span className="ml-2 mono-overline text-slate-500 text-[0.6rem]">
+                  {rating}/5
                 </span>
               </div>
-              <p className="text-sm text-slate-200 leading-relaxed font-medium">
-                "Carlos came out same-day for our furnace and explained
-                everything. Honest pricing, professional crew. Will use Apex
-                again!"
-              </p>
             </div>
 
-            {/* Spacer */}
-            <div className="my-6 flex items-center gap-3">
-              <span className="mono-overline text-blue-400 text-[0.6rem]">
-                AI · DRAFTING REPLY
-              </span>
-              <div className="flex-1 h-px bg-slate-800" />
-              <span className="mono-overline text-slate-500 text-[0.6rem]">
-                0.8s
-              </span>
-            </div>
-
-            {/* AI reply */}
-            <div className="border border-blue-500/30 bg-blue-500/5 p-5">
-              <div className="flex items-start gap-3 mb-3">
-                <div className="w-7 h-7 shrink-0 bg-blue-600 flex items-center justify-center">
-                  <ThumbsUp
-                    size={13}
-                    className="text-white"
-                    strokeWidth={2.5}
-                  />
-                </div>
-                <div className="flex-1">
-                  <div className="mono-overline text-blue-400 text-[0.55rem]">
-                    YOUR BRAND · APPROVED
-                  </div>
-                </div>
+            {/* Name + business compact */}
+            <div className="grid grid-cols-2 gap-3 mb-4">
+              <div>
+                <label className="mono-overline text-slate-500 block mb-1.5">
+                  Customer
+                </label>
+                <input
+                  value={customerName}
+                  onChange={(e) => setCustomerName(e.target.value)}
+                  data-testid="reviewpilot-customer"
+                  className="w-full bg-slate-900 border border-slate-800 focus:border-blue-500 outline-none px-3 py-2.5 text-sm font-medium text-white"
+                  placeholder="Maria"
+                />
               </div>
-              <p className="text-sm text-white leading-relaxed font-medium">
-                Maria — thank you for the kind words! We'll let Carlos know
-                he made your day. Welcome to the Apex family — we'll be here
-                whenever you need us. 🛠️
-              </p>
+              <div>
+                <label className="mono-overline text-slate-500 block mb-1.5">
+                  Business
+                </label>
+                <input
+                  value={businessName}
+                  onChange={(e) => setBusinessName(e.target.value)}
+                  data-testid="reviewpilot-business"
+                  className="w-full bg-slate-900 border border-slate-800 focus:border-blue-500 outline-none px-3 py-2.5 text-sm font-medium text-white"
+                  placeholder="Your business"
+                />
+              </div>
             </div>
 
-            {/* Action row */}
-            <div className="mt-auto pt-6 flex items-center gap-3">
-              <button className="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 text-xs transition-colors">
-                APPROVE & POST
-              </button>
-              <button className="px-4 py-3 border border-slate-700 hover:border-slate-500 text-slate-300 hover:text-white font-bold text-xs transition-colors">
-                EDIT
-              </button>
+            {/* Review textarea */}
+            <div className="mb-5 flex-1 flex flex-col">
+              <label className="mono-overline text-slate-500 block mb-1.5">
+                Paste a review
+              </label>
+              <textarea
+                value={reviewText}
+                onChange={(e) => setReviewText(e.target.value)}
+                data-testid="reviewpilot-textarea"
+                rows={5}
+                maxLength={2000}
+                className="w-full bg-slate-900 border border-slate-800 focus:border-blue-500 outline-none px-3 py-2.5 text-sm font-medium text-slate-200 leading-relaxed resize-none"
+                placeholder="Paste a Google / Yelp / Facebook review…"
+              />
+              <span className="mono-overline text-slate-600 text-[0.55rem] mt-1.5 text-right">
+                {reviewText.length} / 2000
+              </span>
             </div>
+
+            <button
+              onClick={generate}
+              disabled={loading}
+              data-testid="reviewpilot-generate-btn"
+              className="group w-full bg-blue-600 hover:bg-blue-500 disabled:opacity-60 disabled:cursor-not-allowed text-white font-bold py-4 flex items-center justify-center gap-2 transition-all hover:-translate-y-0.5"
+            >
+              {loading ? (
+                <>
+                  <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  Drafting reply…
+                </>
+              ) : (
+                <>
+                  <Wand2 size={16} strokeWidth={2.5} />
+                  Generate AI reply
+                </>
+              )}
+            </button>
           </div>
 
-          {/* RIGHT — Feature grid */}
-          <div className="md:col-span-7 grid sm:grid-cols-2 gap-6 md:gap-7">
-            {FEATURES.map((f, i) => {
-              const Icon = f.icon;
-              return (
-                <div
-                  key={i}
-                  data-testid={`reviewpilot-feature-${i}`}
-                  className="group bg-white border border-slate-200 p-7 hover:border-blue-300 transition-all duration-300 hover:shadow-[0_18px_40px_rgba(37,99,235,0.08)] flex flex-col"
+          {/* RIGHT — Generated reply + features */}
+          <div className="md:col-span-7 flex flex-col gap-6 md:gap-7">
+            {/* Generated reply card */}
+            <div
+              data-testid="reviewpilot-output"
+              className={`relative bg-white border ${
+                draft.escalate
+                  ? "border-red-300"
+                  : draft.sentiment === "mixed"
+                  ? "border-amber-300"
+                  : "border-blue-300"
+              } p-6 md:p-7 transition-all duration-500`}
+            >
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  {draft.escalate ? (
+                    <AlertTriangle
+                      size={14}
+                      className={sentimentTag.cls}
+                      strokeWidth={2.5}
+                    />
+                  ) : (
+                    <ThumbsUp
+                      size={14}
+                      className={sentimentTag.cls}
+                      strokeWidth={2.5}
+                    />
+                  )}
+                  <span className={`mono-overline ${sentimentTag.cls}`}>
+                    {sentimentTag.label}
+                  </span>
+                </div>
+                <button
+                  onClick={copyReply}
+                  data-testid="reviewpilot-copy-btn"
+                  className="flex items-center gap-1.5 mono-overline text-slate-500 hover:text-slate-950 text-[0.6rem] transition-colors"
                 >
-                  <div className="flex items-center justify-between mb-5">
-                    <div className="w-11 h-11 bg-slate-950 flex items-center justify-center">
+                  {copied ? (
+                    <>
+                      <CheckCircle2 size={12} className="text-emerald-600" />
+                      COPIED
+                    </>
+                  ) : (
+                    <>
+                      <Copy size={12} />
+                      COPY
+                    </>
+                  )}
+                </button>
+              </div>
+
+              <div className="mono-overline text-slate-400 mb-2">
+                Suggested reply
+              </div>
+              <p
+                data-testid="reviewpilot-reply"
+                className="font-display text-lg md:text-xl font-medium text-slate-950 leading-relaxed"
+              >
+                {draft.reply}
+              </p>
+
+              <div className="mt-5 pt-5 border-t border-slate-200 flex items-center justify-between gap-3">
+                <span className="mono-overline text-slate-400">
+                  {hasGenerated ? "GENERATED · LIVE AI" : "DEFAULT · SAMPLE"}
+                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    disabled={draft.escalate}
+                    className="px-4 py-2.5 text-xs font-bold border-2 border-slate-950 text-slate-950 hover:bg-slate-950 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                  >
+                    APPROVE &amp; POST
+                  </button>
+                  {draft.escalate && (
+                    <button className="px-4 py-2.5 text-xs font-bold bg-red-600 hover:bg-red-700 text-white transition-colors">
+                      ESCALATE
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Compact feature row */}
+            <div className="grid sm:grid-cols-2 gap-4 md:gap-5">
+              {FEATURES.map((f, i) => {
+                const Icon = f.icon;
+                return (
+                  <div
+                    key={i}
+                    data-testid={`reviewpilot-feature-${i}`}
+                    className="group bg-white border border-slate-200 p-5 hover:border-blue-300 transition-all flex items-start gap-4"
+                  >
+                    <div className="w-10 h-10 shrink-0 bg-slate-950 flex items-center justify-center">
                       <Icon
-                        size={20}
+                        size={18}
                         className="text-blue-400"
                         strokeWidth={2.25}
                       />
                     </div>
-                    <span className="mono-overline text-slate-300 text-[0.6rem]">
-                      0{i + 1}
-                    </span>
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-display font-extrabold text-base tracking-tight text-slate-950 leading-tight">
+                        {f.title}
+                      </h3>
+                      <p className="mt-1 text-xs text-slate-600 font-medium leading-relaxed">
+                        {f.body}
+                      </p>
+                    </div>
                   </div>
-                  <h3 className="font-display font-extrabold text-lg md:text-xl tracking-tight text-slate-950 leading-tight">
-                    {f.title}
-                  </h3>
-                  <p className="mt-2 text-sm text-slate-600 font-medium leading-relaxed">
-                    {f.body}
-                  </p>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
         </div>
 
         {/* CTA strip */}
-        <div className="mt-14 md:mt-16 bg-slate-950 text-white p-8 md:p-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+        <div className="bg-slate-950 text-white p-8 md:p-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
           <div className="max-w-xl">
             <div className="mono-overline text-blue-400">Try ReviewPilot</div>
             <div className="font-display font-extrabold text-2xl md:text-3xl tracking-tight mt-2 leading-tight">

@@ -56,6 +56,19 @@ class StatusCheckCreate(BaseModel):
     client_name: str
 
 
+class ReviewDraftRequest(BaseModel):
+    review_text: str = Field(..., min_length=3, max_length=2000)
+    rating: int = Field(..., ge=1, le=5)
+    customer_name: Optional[str] = Field(default=None, max_length=80)
+    business_name: Optional[str] = Field(default=None, max_length=120)
+
+
+class ReviewDraftResponse(BaseModel):
+    reply: str
+    sentiment: str  # positive | mixed | negative
+    escalate: bool
+
+
 class LeadCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=120)
     business: str | None = Field(default=None, max_length=160)
@@ -234,6 +247,83 @@ async def lead_stats(_: bool = Depends(require_admin)):
 async def trigger_roundup(_: bool = Depends(require_admin)):
     """Manually trigger the daily roundup email (for testing / replays)."""
     return await send_daily_roundup(db)
+
+
+@api_router.post("/reviewpilot/draft", response_model=ReviewDraftResponse)
+async def reviewpilot_draft(payload: ReviewDraftRequest):
+    """Generate an on-brand AI reply for a customer review (ReviewPilot demo)."""
+    import json
+    import uuid as _uuid
+    from emergentintegrations.llm.chat import LlmChat, UserMessage
+
+    api_key = os.environ.get("EMERGENT_LLM_KEY")
+    if not api_key:
+        raise HTTPException(status_code=503, detail="LLM not configured")
+
+    business = (payload.business_name or "the team").strip()
+    customer = (payload.customer_name or "the customer").strip()
+
+    system_msg = (
+        "You are ReviewPilot — an AI that drafts on-brand replies to Google / Yelp / Facebook "
+        "reviews for local field-service businesses (plumbers, HVAC, electricians).\n\n"
+        "Rules:\n"
+        "1. 5-star reviews → warm, personal thank-you (40-70 words), mention the customer by first "
+        "   name, reference one specific detail from the review.\n"
+        "2. 3-4 star reviews (mixed) → acknowledge the positive, gently address the gap, invite a "
+        "   private follow-up (e.g., 'please call us at the shop').\n"
+        "3. 1-2 star reviews (negative) → empathetic, NEVER defensive, take ownership, ask them to "
+        "   call directly. Keep public response short (under 50 words) and set escalate=true.\n\n"
+        "Return STRICT JSON with keys: reply (string), sentiment (one of 'positive'|'mixed'|"
+        "'negative'), escalate (boolean — true only for 1-2 star). No prose outside the JSON."
+    )
+
+    user_text = (
+        f"Business: {business}\n"
+        f"Customer name: {customer}\n"
+        f"Rating: {payload.rating} stars\n"
+        f"Review text:\n\"\"\"\n{payload.review_text.strip()}\n\"\"\"\n\n"
+        "Generate the reply JSON now."
+    )
+
+    chat = LlmChat(
+        api_key=api_key,
+        session_id=f"reviewpilot-{_uuid.uuid4()}",
+        system_message=system_msg,
+    ).with_model("anthropic", "claude-haiku-4-5-20251001")
+
+    try:
+        raw = await chat.send_message(UserMessage(text=user_text))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("ReviewPilot LLM call failed: %s", exc)
+        raise HTTPException(status_code=502, detail="AI reply generation failed.")
+
+    # Robustly extract JSON even if model wraps in code fences
+    text = (raw or "").strip()
+    if text.startswith("```"):
+        text = text.strip("`")
+        # strip optional 'json' language tag
+        if text.lower().startswith("json"):
+            text = text[4:].strip()
+    start = text.find("{")
+    end = text.rfind("}")
+    if start == -1 or end == -1 or end <= start:
+        logger.warning("ReviewPilot returned non-JSON: %r", raw[:200])
+        raise HTTPException(status_code=502, detail="AI reply was not valid JSON.")
+    try:
+        parsed = json.loads(text[start : end + 1])
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("ReviewPilot JSON parse failed: %s · %r", exc, text[:200])
+        raise HTTPException(status_code=502, detail="AI reply was not valid JSON.")
+
+    reply = (parsed.get("reply") or "").strip()
+    sentiment = (parsed.get("sentiment") or "positive").strip().lower()
+    if sentiment not in {"positive", "mixed", "negative"}:
+        sentiment = "positive"
+    escalate = bool(parsed.get("escalate", payload.rating <= 2))
+    if not reply:
+        raise HTTPException(status_code=502, detail="Empty AI reply.")
+
+    return ReviewDraftResponse(reply=reply, sentiment=sentiment, escalate=escalate)
 
 
 @api_router.post("/status", response_model=StatusCheck)
