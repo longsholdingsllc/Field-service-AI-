@@ -8,9 +8,10 @@ import asyncio
 import logging
 from pathlib import Path
 from pydantic import BaseModel, Field, ConfigDict
-from typing import List, Optional
+from typing import List, Optional, Any, Dict
 import uuid
 from datetime import datetime, timezone, timedelta
+import httpx
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -30,6 +31,9 @@ DEMO_CALL_PATH = AUDIO_CACHE_DIR / "demo_call.mp3"
 
 # Lock to prevent concurrent generation
 _audio_gen_lock = asyncio.Lock()
+
+# Live Lead Qualifier endpoint
+LEAD_QUALIFIER_URL = "https://live-lead-qualifier-agent.vercel.app/api/qualify"
 
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
@@ -77,6 +81,7 @@ class LeadCreate(BaseModel):
     email: str = Field(..., min_length=3, max_length=160)
     source: str | None = Field(default="landing-cta", max_length=60)
     variant: str | None = Field(default=None, max_length=40)
+    message: str | None = Field(default=None, max_length=2000)  # optional free-text for better scoring
 
 
 class Lead(BaseModel):
@@ -88,7 +93,27 @@ class Lead(BaseModel):
     email: str
     source: str = "landing-cta"
     variant: str | None = None
+    score: int | None = None
+    recommended_action: str | None = None
+    qualification_summary: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+async def qualify_lead_async(lead_data: Dict[str, Any]) -> Dict[str, Any]:
+    """Call the live Lead Qualification API. Never raises – always returns a safe result."""
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            resp = await client.post(LEAD_QUALIFIER_URL, json=lead_data)
+            if resp.status_code == 200:
+                return resp.json()
+    except Exception as e:
+        logging.warning("Lead qualifier call failed: %s", e)
+    return {
+        "success": False,
+        "score": 0,
+        "recommended_action": "nurture",
+        "summary": "Qualifier unavailable – defaulting to nurture",
+    }
 
 
 # ---- Demo call script (alternating caller/agent voices) ----
@@ -194,10 +219,24 @@ async def get_demo_call_audio():
 
 @api_router.post("/leads", response_model=Lead, status_code=201)
 async def create_lead(payload: LeadCreate, background_tasks: BackgroundTasks):
-    """Persist a demo-request lead from the landing page and notify via email + SMS."""
+    """Persist a demo-request lead from the landing page, score it with the live AI agent, and notify."""
     email = payload.email.strip().lower()
     if "@" not in email or "." not in email.split("@")[-1]:
         raise HTTPException(status_code=400, detail="Please provide a valid email address.")
+
+    # Build payload for the live qualifier
+    qualifier_payload = {
+        "name": payload.name.strip(),
+        "email": email,
+        "company": (payload.business or "").strip() or None,
+        "title": None,  # not collected on this form
+        "message": (payload.message or f"Demo request from landing page. Source: {payload.source or 'landing-cta'}").strip(),
+        "budget": None,
+        "timeline": None,
+    }
+
+    # Score the lead (non-blocking on failure)
+    qualification = await qualify_lead_async(qualifier_payload)
 
     lead = Lead(
         name=payload.name.strip(),
@@ -206,11 +245,17 @@ async def create_lead(payload: LeadCreate, background_tasks: BackgroundTasks):
         email=email,
         source=(payload.source or "landing-cta").strip(),
         variant=(payload.variant or "").strip() or None,
+        score=qualification.get("score"),
+        recommended_action=qualification.get("recommended_action"),
+        qualification_summary=qualification.get("summary"),
     )
     doc = lead.model_dump()
     doc["created_at"] = doc["created_at"].isoformat()
     await db.leads.insert_one(doc)
-    logger.info("New lead captured: %s · %s · variant=%s", lead.name, lead.email, lead.variant)
+    logger.info(
+        "New lead captured & scored: %s · %s · score=%s · action=%s",
+        lead.name, lead.email, lead.score, lead.recommended_action
+    )
 
     # Fire-and-forget notifications — never block the HTTP response.
     background_tasks.add_task(notify_new_lead, doc)
@@ -252,14 +297,7 @@ async def trigger_roundup(_: bool = Depends(require_admin)):
 
 @api_router.post("/reviewpilot/draft", response_model=ReviewDraftResponse)
 async def reviewpilot_draft(payload: ReviewDraftRequest, cache_busted: bool = False):
-    """Generate an on-brand AI reply for a customer review (ReviewPilot demo).
-
-    Identical (text + rating + customer + business) requests are served from
-    MongoDB cache to cut LLM cost on viral traffic. Cache expires in 30 days
-    via TTL index registered at startup.
-
-    Use ?cache_busted=true to force a fresh LLM call (ops / QA replays).
-    """
+    """Generate an on-brand AI reply for a customer review (ReviewPilot demo)."""
     import hashlib
     import json
     import re
@@ -272,8 +310,6 @@ async def reviewpilot_draft(payload: ReviewDraftRequest, cache_busted: bool = Fa
 
     business = (payload.business_name or "the team").strip()
     customer = (payload.customer_name or "the customer").strip()
-    # Normalize: lowercase, collapse whitespace, strip punctuation entirely so
-    # "Will use again!" and "Will use again." hit the same cache entry.
     review_norm = re.sub(r"[^\w\s]", "", payload.review_text.lower())
     review_norm = " ".join(review_norm.split())
 
@@ -330,7 +366,6 @@ async def reviewpilot_draft(payload: ReviewDraftRequest, cache_busted: bool = Fa
         logger.warning("ReviewPilot LLM call failed: %s", exc)
         raise HTTPException(status_code=502, detail="AI reply generation failed.")
 
-    # Robustly extract JSON even if model wraps in code fences
     text = (raw or "").strip()
     if text.startswith("```"):
         text = text.strip("`")
@@ -379,7 +414,7 @@ async def reviewpilot_draft(payload: ReviewDraftRequest, cache_busted: bool = Fa
             "BUST-REFRESH" if cache_busted else "MISS — stored",
             cache_key[:10],
         )
-    except Exception as exc:  # noqa: BLE001 — cache write must never break the reply
+    except Exception as exc:  # noqa: BLE001
         logger.warning("ReviewPilot cache write failed: %s", exc)
 
     return ReviewDraftResponse(
@@ -416,8 +451,6 @@ async def reviewpilot_cache_stats(_: bool = Depends(require_admin)):
             (summary.get("total_hits", 0) - summary.get("entries", 0))
             / max(summary.get("total_hits", 1), 1)
         ),
-        # Conservative per-call LLM cost estimate for Claude Haiku 4.5
-        # (~500 input + ~150 output tokens ≈ $0.0015). Tweak if pricing changes.
         "savings_usd": round(
             max(summary.get("total_hits", 0) - summary.get("entries", 0), 0) * 0.0015,
             4,
