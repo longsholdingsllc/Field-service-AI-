@@ -33,18 +33,21 @@ export const Footer = () => {
           <div className="md:col-span-2">
             <div className="mono-overline text-slate-500 mb-4">Product</div>
             <ul className="space-y-2.5">
-              {["Services", "How it works", "Pricing", "Integrations"].map(
-                (l) => (
-                  <li key={l}>
-                    <a
-                      href="#services"
-                      className="text-sm font-semibold text-slate-950 hover:text-blue-600 transition-colors"
-                    >
-                      {l}
-                    </a>
-                  </li>
-                )
-              )}
+              {[
+                { label: "Services", href: "#services" },
+                { label: "How it works", href: "#how-it-works" },
+                { label: "Pricing", href: "#pricing" },
+                { label: "Integrations", href: "#how-it-works" },
+              ].map((l) => (
+                <li key={l.label}>
+                  <a
+                    href={l.href}
+                    className="text-sm font-semibold text-slate-950 hover:text-blue-600 transition-colors"
+                  >
+                    {l.label}
+                  </a>
+                </li>
+              ))}
             </ul>
           </div>
           <div className="md:col-span-2">
