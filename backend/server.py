@@ -19,6 +19,25 @@ load_dotenv(ROOT_DIR / '.env')
 from notifications import notify_new_lead  # noqa: E402  (after load_dotenv)
 from roundup import send_daily_roundup  # noqa: E402
 
+# Optional Emergent AI integrations. `emergentintegrations` is an
+# Emergent-internal package that is not published on PyPI, so it only
+# exists inside the Emergent runtime. Outside Emergent it is absent and
+# the AI features that depend on it (ReviewPilot drafts, demo-call TTS)
+# are unavailable: their endpoints return a clean 503 instead of
+# crashing the app. All non-AI routes work normally either way.
+try:
+    from emergentintegrations.llm.chat import LlmChat, UserMessage
+    from emergentintegrations.llm.openai import OpenAITextToSpeech
+except ImportError:  # pragma: no cover - depends on deployment environment
+    LlmChat = None
+    UserMessage = None
+    OpenAITextToSpeech = None
+
+AI_UNAVAILABLE_DETAIL = (
+    "AI integration unavailable: the emergentintegrations library is not "
+    "installed in this environment"
+)
+
 # MongoDB connection
 mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
@@ -158,7 +177,8 @@ DEMO_CALL_SCRIPT = [
 
 async def _generate_demo_call_audio() -> bytes:
     """Generate the demo call audio by concatenating per-line TTS outputs."""
-    from emergentintegrations.llm.openai import OpenAITextToSpeech
+    if OpenAITextToSpeech is None:
+        raise RuntimeError(AI_UNAVAILABLE_DETAIL)
 
     api_key = os.environ.get("EMERGENT_LLM_KEY")
     if not api_key:
@@ -302,7 +322,9 @@ async def reviewpilot_draft(payload: ReviewDraftRequest, cache_busted: bool = Fa
     import json
     import re
     import uuid as _uuid
-    from emergentintegrations.llm.chat import LlmChat, UserMessage
+
+    if LlmChat is None or UserMessage is None:
+        raise HTTPException(status_code=503, detail=AI_UNAVAILABLE_DETAIL)
 
     api_key = os.environ.get("EMERGENT_LLM_KEY")
     if not api_key:
