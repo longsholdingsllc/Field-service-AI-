@@ -28,24 +28,68 @@ export const CTASection = () => {
       return;
     }
     setSubmitting(true);
-    try {
-      await axios.post(`${API}/leads`, {
-        name: form.name,
-        business: form.business || null,
-        phone: form.phone,
-        email: form.email,
-        source: "landing-cta",
-        variant: getPricingVariant(),
-      });
+    const onSuccess = () => {
       toast.success("Demo booked. We'll call you within 1 business hour.", {
         description: `Thanks ${form.name} — look out for a call from (415) 555-SPEAK.`,
       });
       setForm({ name: "", business: "", phone: "", email: "" });
-    } catch (err) {
-      const detail =
-        err?.response?.data?.detail ||
-        "Couldn't submit your request. Please try again.";
-      toast.error("Submission failed", { description: detail });
+    };
+    try {
+      // Primary path: email the lead straight to Long's Holdings via
+      // FormSubmit, directly from the visitor's browser (same pattern as
+      // CoHost AI). This delivers the lead to longsholdingsllc@gmail.com
+      // even though the FastAPI backend is not hosted yet. The lead's own
+      // email is set as Reply-To via _replyto.
+      const res = await fetch(
+        "https://formsubmit.co/ajax/longsholdingsllc@gmail.com",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json",
+          },
+          body: JSON.stringify({
+            name: form.name,
+            business: form.business || "not provided",
+            phone: form.phone,
+            email: form.email,
+            source: "landing-cta",
+            variant: getPricingVariant(),
+            _replyto: form.email,
+            _subject: `New ServiceSpeak AI demo request: ${form.name}`,
+          }),
+        }
+      );
+      if (!res.ok) throw new Error("FormSubmit request failed");
+      const data = await res.json().catch(() => null);
+      if (
+        data &&
+        data.success !== undefined &&
+        String(data.success) !== "true"
+      ) {
+        throw new Error("FormSubmit request failed");
+      }
+      onSuccess();
+    } catch {
+      // Secondary fallback only: the /api POST (works once a backend is
+      // hosted). It runs only when the FormSubmit path above has failed,
+      // so it can never break the email delivery path.
+      try {
+        await axios.post(`${API}/leads`, {
+          name: form.name,
+          business: form.business || null,
+          phone: form.phone,
+          email: form.email,
+          source: "landing-cta",
+          variant: getPricingVariant(),
+        });
+        onSuccess();
+      } catch (err) {
+        const detail =
+          err?.response?.data?.detail ||
+          "Couldn't submit your request. Please try again.";
+        toast.error("Submission failed", { description: detail });
+      }
     } finally {
       setSubmitting(false);
     }
