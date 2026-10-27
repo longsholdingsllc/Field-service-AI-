@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { ArrowRight, PhoneCall, ShieldCheck, Sparkles } from "lucide-react";
 import { getPricingVariant } from "@/lib/abVariant";
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || "";
 const API = `${BACKEND_URL}/api`;
 
 export const CTASection = () => {

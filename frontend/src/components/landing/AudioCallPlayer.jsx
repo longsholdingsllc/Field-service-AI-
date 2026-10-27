@@ -1,8 +1,24 @@
 import { useEffect, useRef, useState } from "react";
 import { Play, Pause, Volume2, RotateCcw, PhoneCall } from "lucide-react";
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || "";
 const API = `${BACKEND_URL}/api`;
+
+// Static fallbacks (used when no backend is configured): the demo-call
+// transcript lines and the pre-generated demo recording that ship in this
+// repo under backend/ (DEMO_CALL_SCRIPT + audio_cache/demo_call.mp3, the
+// same assets the backend serves from /api/audio/demo-call).
+const FALLBACK_SCRIPT = [
+  { speaker: "agent", text: "Apex Heating and Air, this is Sarah. How can I help you today?" },
+  { speaker: "caller", text: "Hi, my AC just stopped working and the house is getting really hot. Any chance someone can come out today?" },
+  { speaker: "agent", text: "Oh no, I'm sorry to hear that. Let's get a technician out as soon as we can. Can I grab your address and a good callback number?" },
+  { speaker: "caller", text: "Yeah, it's seven forty-two Elm Street in Denver. My number is five five five, four one two, eight eight nine zero." },
+  { speaker: "agent", text: "Got it. I have a tech available between four and six PM today. Should I lock that in and text you a confirmation?" },
+  { speaker: "caller", text: "Yes please, that would be amazing. Thank you so much." },
+  { speaker: "agent", text: "You're all booked. You'll get a text within two minutes with your tech's name and arrival window. Anything else I can help you with today?" },
+];
+const FALLBACK_AUDIO_URL =
+  "https://raw.githubusercontent.com/longsholdingsllc/Field-service-AI-/main/backend/audio_cache/demo_call.mp3";
 
 export const AudioCallPlayer = () => {
   const audioRef = useRef(null);
@@ -16,10 +32,17 @@ export const AudioCallPlayer = () => {
   const [script, setScript] = useState([]);
 
   useEffect(() => {
+    if (!BACKEND_URL) {
+      setScript(FALLBACK_SCRIPT);
+      return;
+    }
     fetch(`${API}/audio/demo-call/script`)
-      .then((r) => r.json())
-      .then((d) => setScript(d.lines || []))
-      .catch(() => setScript([]));
+      .then((r) => {
+        if (!r.ok) throw new Error("script unavailable");
+        return r.json();
+      })
+      .then((d) => setScript(d.lines?.length ? d.lines : FALLBACK_SCRIPT))
+      .catch(() => setScript(FALLBACK_SCRIPT));
   }, []);
 
   // Estimate per-line offsets based on character length once duration is known
@@ -41,6 +64,7 @@ export const AudioCallPlayer = () => {
       if (currentTime >= lineOffsets[i]) idx = i;
     }
     setActiveLine(idx);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentTime, lineOffsets.length]);
 
   const handlePlayPause = async () => {
@@ -54,7 +78,7 @@ export const AudioCallPlayer = () => {
       setLoading(true);
       setError(null);
       try {
-        audio.src = `${API}/audio/demo-call`;
+        audio.src = BACKEND_URL ? `${API}/audio/demo-call` : FALLBACK_AUDIO_URL;
         await audio.play();
         setLoaded(true);
       } catch (e) {
