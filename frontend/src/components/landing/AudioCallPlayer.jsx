@@ -1,10 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { Play, Pause, Volume2, RotateCcw, PhoneCall } from "lucide-react";
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || "";
-const API = `${BACKEND_URL}/api`;
+import { BACKEND_URL, API } from "@/lib/backend";
 
-// Static fallbacks (used when no backend is configured): the demo-call
+// Static fallbacks (used if the backend is unreachable): the demo-call
 // transcript lines and the pre-generated demo recording that ship in this
 // repo under backend/ (DEMO_CALL_SCRIPT + audio_cache/demo_call.mp3, the
 // same assets the backend serves from /api/audio/demo-call).

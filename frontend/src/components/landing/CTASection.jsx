@@ -4,9 +4,7 @@ import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { ArrowRight, PhoneCall, ShieldCheck, Sparkles } from "lucide-react";
 import { getPricingVariant } from "@/lib/abVariant";
-
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || "";
-const API = `${BACKEND_URL}/api`;
+import { API } from "@/lib/backend";
 
 export const CTASection = () => {
   const [form, setForm] = useState({
@@ -35,60 +33,67 @@ export const CTASection = () => {
       setForm({ name: "", business: "", phone: "", email: "" });
     };
     try {
-      // Primary path: email the lead straight to Long's Holdings via
-      // FormSubmit, directly from the visitor's browser (same pattern as
-      // CoHost AI). This delivers the lead to longsholdingsllc@gmail.com
-      // even though the FastAPI backend is not hosted yet. The lead's own
-      // email is set as Reply-To via _replyto.
-      const res = await fetch(
-        "https://formsubmit.co/ajax/longsholdingsllc@gmail.com",
+      // Primary path: the ServiceSpeak backend (hosted on Render). It
+      // stores the lead, scores it with the live qualifier, and powers
+      // the /admin dashboard. The timeout keeps a cold-starting backend
+      // from hanging the form — on any failure the FormSubmit email
+      // path below runs instead, so a lead is never lost silently.
+      await axios.post(
+        `${API}/leads`,
         {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Accept: "application/json",
-          },
-          body: JSON.stringify({
-            name: form.name,
-            business: form.business || "not provided",
-            phone: form.phone,
-            email: form.email,
-            source: "landing-cta",
-            variant: getPricingVariant(),
-            _replyto: form.email,
-            _subject: `New ServiceSpeak AI demo request: ${form.name}`,
-          }),
-        }
-      );
-      if (!res.ok) throw new Error("FormSubmit request failed");
-      const data = await res.json().catch(() => null);
-      if (
-        data &&
-        data.success !== undefined &&
-        String(data.success) !== "true"
-      ) {
-        throw new Error("FormSubmit request failed");
-      }
-      onSuccess();
-    } catch {
-      // Secondary fallback only: the /api POST (works once a backend is
-      // hosted). It runs only when the FormSubmit path above has failed,
-      // so it can never break the email delivery path.
-      try {
-        await axios.post(`${API}/leads`, {
           name: form.name,
           business: form.business || null,
           phone: form.phone,
           email: form.email,
           source: "landing-cta",
           variant: getPricingVariant(),
-        });
+        },
+        { timeout: 15000 }
+      );
+      onSuccess();
+    } catch {
+      // Fallback: email the lead straight to Long's Holdings via
+      // FormSubmit, directly from the visitor's browser (same pattern
+      // as CoHost AI). The lead's own email is set as Reply-To via
+      // _replyto. If this form's one-time FormSubmit activation has not
+      // been clicked yet, FormSubmit answers success:"false" and the
+      // visitor sees the error toast rather than a fake success.
+      try {
+        const res = await fetch(
+          "https://formsubmit.co/ajax/longsholdingsllc@gmail.com",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Accept: "application/json",
+            },
+            body: JSON.stringify({
+              name: form.name,
+              business: form.business || "not provided",
+              phone: form.phone,
+              email: form.email,
+              source: "landing-cta",
+              variant: getPricingVariant(),
+              _replyto: form.email,
+              _subject: `New ServiceSpeak AI demo request: ${form.name}`,
+            }),
+          }
+        );
+        if (!res.ok) throw new Error("FormSubmit request failed");
+        const data = await res.json().catch(() => null);
+        if (
+          data &&
+          data.success !== undefined &&
+          String(data.success) !== "true"
+        ) {
+          throw new Error("FormSubmit request failed");
+        }
         onSuccess();
       } catch (err) {
-        const detail =
-          err?.response?.data?.detail ||
-          "Couldn't submit your request. Please try again.";
-        toast.error("Submission failed", { description: detail });
+        toast.error("Submission failed", {
+          description:
+            "Couldn't submit your request. Please try again in a moment.",
+        });
       }
     } finally {
       setSubmitting(false);

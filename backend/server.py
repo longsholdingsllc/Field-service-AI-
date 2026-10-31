@@ -2,7 +2,6 @@ from fastapi import FastAPI, APIRouter, HTTPException, BackgroundTasks, Header, 
 from fastapi.responses import FileResponse, JSONResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
-from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import asyncio
 import logging
@@ -34,14 +33,68 @@ except ImportError:  # pragma: no cover - depends on deployment environment
     OpenAITextToSpeech = None
 
 AI_UNAVAILABLE_DETAIL = (
-    "AI integration unavailable: the emergentintegrations library is not "
-    "installed in this environment"
+    "AI integration unavailable: no LLM provider is configured on the "
+    "server (set ANTHROPIC_API_KEY, or EMERGENT_LLM_KEY where the "
+    "emergentintegrations library is installed)"
 )
 
-# MongoDB connection
-mongo_url = os.environ['MONGO_URL']
-client = AsyncIOMotorClient(mongo_url)
-db = client[os.environ['DB_NAME']]
+# Data layer — MongoDB when MONGO_URL is set, otherwise the built-in
+# SQLite store (see store.py). `db` exposes the same async API either way,
+# so the app boots with zero external services.
+from store import STORE_BACKEND, get_db  # noqa: E402
+
+client, db = get_db()
+
+
+def _llm_available() -> bool:
+    """True when at least one supported LLM path is configured."""
+    if LlmChat is not None and os.environ.get("EMERGENT_LLM_KEY"):
+        return True
+    return bool(os.environ.get("ANTHROPIC_API_KEY"))
+
+
+async def _llm_chat(system_msg: str, user_text: str) -> str:
+    """One-shot LLM completion.
+
+    Prefers the Emergent integration when it is installed and keyed;
+    otherwise calls the Anthropic API directly with ANTHROPIC_API_KEY
+    (same model the Emergent path used). Raises HTTPException(503) when
+    no provider is configured — AI output is never faked.
+    """
+    if LlmChat is not None and UserMessage is not None:
+        api_key = os.environ.get("EMERGENT_LLM_KEY")
+        if api_key:
+            chat = LlmChat(
+                api_key=api_key,
+                session_id=f"reviewpilot-{uuid.uuid4()}",
+                system_message=system_msg,
+            ).with_model("anthropic", "claude-haiku-4-5-20251001")
+            return await chat.send_message(UserMessage(text=user_text))
+    anthropic_key = os.environ.get("ANTHROPIC_API_KEY")
+    if anthropic_key:
+        async with httpx.AsyncClient(timeout=30.0) as http:
+            resp = await http.post(
+                "https://api.anthropic.com/v1/messages",
+                headers={
+                    "x-api-key": anthropic_key,
+                    "anthropic-version": "2023-06-01",
+                    "content-type": "application/json",
+                },
+                json={
+                    "model": "claude-haiku-4-5-20251001",
+                    "max_tokens": 500,
+                    "system": system_msg,
+                    "messages": [{"role": "user", "content": user_text}],
+                },
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            return "".join(
+                block.get("text", "")
+                for block in data.get("content", [])
+                if block.get("type") == "text"
+            )
+    raise HTTPException(status_code=503, detail=AI_UNAVAILABLE_DETAIL)
 
 # Audio cache dir
 AUDIO_CACHE_DIR = ROOT_DIR / "audio_cache"
@@ -176,32 +229,63 @@ DEMO_CALL_SCRIPT = [
 
 
 async def _generate_demo_call_audio() -> bytes:
-    """Generate the demo call audio by concatenating per-line TTS outputs."""
-    if OpenAITextToSpeech is None:
-        raise RuntimeError(AI_UNAVAILABLE_DETAIL)
+    """Generate the demo call audio by concatenating per-line TTS outputs.
 
+    Prefers the Emergent TTS integration when installed and keyed;
+    otherwise calls the OpenAI speech API directly with OPENAI_API_KEY.
+    (In practice the committed audio_cache/demo_call.mp3 is served, so
+    this only runs if that cache file is ever removed.)
+    """
     api_key = os.environ.get("EMERGENT_LLM_KEY")
-    if not api_key:
-        raise RuntimeError("EMERGENT_LLM_KEY not configured")
+    if OpenAITextToSpeech is not None and api_key:
+        tts = OpenAITextToSpeech(api_key=api_key)
+        chunks: List[bytes] = []
+        for line in DEMO_CALL_SCRIPT:
+            audio = await tts.generate_speech(
+                text=line["text"],
+                model="tts-1",
+                voice=line["voice"],
+                speed=1.05 if line["speaker"] == "caller" else 1.0,
+            )
+            chunks.append(audio)
+        # MP3 frames concatenate cleanly for browser playback.
+        return b"".join(chunks)
 
-    tts = OpenAITextToSpeech(api_key=api_key)
-    chunks: List[bytes] = []
-    for line in DEMO_CALL_SCRIPT:
-        audio = await tts.generate_speech(
-            text=line["text"],
-            model="tts-1",
-            voice=line["voice"],
-            speed=1.05 if line["speaker"] == "caller" else 1.0,
-        )
-        chunks.append(audio)
+    openai_key = os.environ.get("OPENAI_API_KEY")
+    if openai_key:
+        chunks = []
+        async with httpx.AsyncClient(timeout=60.0) as http:
+            for line in DEMO_CALL_SCRIPT:
+                resp = await http.post(
+                    "https://api.openai.com/v1/audio/speech",
+                    headers={
+                        "Authorization": f"Bearer {openai_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "model": "tts-1",
+                        "voice": line["voice"],
+                        "input": line["text"],
+                        "speed": 1.05 if line["speaker"] == "caller" else 1.0,
+                        "response_format": "mp3",
+                    },
+                )
+                resp.raise_for_status()
+                chunks.append(resp.content)
+        return b"".join(chunks)
 
-    # MP3 frames concatenate cleanly for browser playback.
-    return b"".join(chunks)
+    raise RuntimeError(AI_UNAVAILABLE_DETAIL)
 
 
 @api_router.get("/")
 async def root():
     return {"message": "ServiceSpeak AI backend"}
+
+
+@api_router.get("/health")
+async def health():
+    """Liveness + which store the process booted with (mongodb | sqlite)."""
+    return {"status": "ok", "store": STORE_BACKEND}
 
 
 @api_router.get("/audio/demo-call/script")
@@ -323,12 +407,8 @@ async def reviewpilot_draft(payload: ReviewDraftRequest, cache_busted: bool = Fa
     import re
     import uuid as _uuid
 
-    if LlmChat is None or UserMessage is None:
+    if not _llm_available():
         raise HTTPException(status_code=503, detail=AI_UNAVAILABLE_DETAIL)
-
-    api_key = os.environ.get("EMERGENT_LLM_KEY")
-    if not api_key:
-        raise HTTPException(status_code=503, detail="LLM not configured")
 
     business = (payload.business_name or "the team").strip()
     customer = (payload.customer_name or "the customer").strip()
@@ -376,14 +456,10 @@ async def reviewpilot_draft(payload: ReviewDraftRequest, cache_busted: bool = Fa
         "Generate the reply JSON now."
     )
 
-    chat = LlmChat(
-        api_key=api_key,
-        session_id=f"reviewpilot-{_uuid.uuid4()}",
-        system_message=system_msg,
-    ).with_model("anthropic", "claude-haiku-4-5-20251001")
-
     try:
-        raw = await chat.send_message(UserMessage(text=user_text))
+        raw = await _llm_chat(system_msg, user_text)
+    except HTTPException:
+        raise
     except Exception as exc:  # noqa: BLE001
         logger.warning("ReviewPilot LLM call failed: %s", exc)
         raise HTTPException(status_code=502, detail="AI reply generation failed.")
