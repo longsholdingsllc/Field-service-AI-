@@ -103,6 +103,16 @@ export const HowItWorks = () => {
           </div>
         </div>
 
+        {/* Dispatcher photo */}
+        <div className="relative mt-20">
+          <img
+            src="/images/dispatcher-answering.jpg"
+            alt="Dispatcher answering a caller's phone call in a home-services office"
+            className="w-full aspect-[16/9] md:aspect-[21/9] object-cover border border-slate-800"
+            loading="lazy"
+          />
+        </div>
+
         {/* Footnote */}
         <div className="mt-20 flex flex-wrap items-center gap-x-10 gap-y-4 border-t border-slate-800 pt-10">
           <div className="mono-overline text-slate-500">Integrations</div>

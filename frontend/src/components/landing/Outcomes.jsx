@@ -59,6 +59,16 @@ export const Outcomes = () => {
           </div>
         </div>
 
+        {/* Homeowner photo */}
+        <div className="relative mb-16">
+          <img
+            src="/images/homeowner-welcome.jpg"
+            alt="Homeowner greeting a technician at her front door"
+            className="w-full aspect-[16/9] md:aspect-[21/9] object-cover border-2 border-slate-950"
+            loading="lazy"
+          />
+        </div>
+
         {/* Massive metrics strip */}
         <div
           data-testid="metrics-strip"

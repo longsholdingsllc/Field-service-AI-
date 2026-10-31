@@ -184,6 +184,18 @@ export const Hero = () => {
             </div>
           </div>
         </div>
+
+        {/* Photo band */}
+        <div
+          className="relative mt-14 md:mt-20 fade-up"
+          style={{ animationDelay: "420ms" }}
+        >
+          <img
+            src="/images/hero-technician.jpg"
+            alt="Service technician with a tablet beside a service van at a customer's front door"
+            className="w-full aspect-[16/9] md:aspect-[21/9] object-cover border-2 border-slate-950"
+          />
+        </div>
       </div>
     </section>
   );
