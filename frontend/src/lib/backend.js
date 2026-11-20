@@ -1,10 +1,9 @@
 // API base for the ServiceSpeak backend.
 //
-// REACT_APP_BACKEND_URL (set on the Vercel project) wins when present;
-// otherwise fall back to the hosted Render backend so the site never
-// calls a dead or "undefined" API. The Render service is
-// `servicespeak-api`, deployed from this repo's backend/ directory.
-export const BACKEND_URL =
-  process.env.REACT_APP_BACKEND_URL || "https://servicespeak-api.onrender.com";
+// The backend now runs on Vercel (servicespeak-api.vercel.app), replacing
+// the suspended Render service (servicespeak-api.onrender.com). The URL is
+// pinned here so a stale REACT_APP_BACKEND_URL on the hosting project
+// cannot point the site back at the dead Render backend.
+export const BACKEND_URL = "https://servicespeak-api.vercel.app";
 
 export const API = `${BACKEND_URL}/api`;
